@@ -1,0 +1,6 @@
+{
+  "identifier": "default",
+  "description": "Default T Books window capabilities",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

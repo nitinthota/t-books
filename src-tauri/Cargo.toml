@@ -1,0 +1,52 @@
+[package]
+name = "t-books"
+version = "1.0.0"
+description = "T Books — office register on this PC"
+authors = ["T Books"]
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "t_books_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[[bin]]
+name = "t-books"
+path = "src/main.rs"
+
+[[bin]]
+name = "t-books-stress"
+path = "src/bin/t-books-stress.rs"
+
+[[bin]]
+name = "t-books-endurance"
+path = "src/bin/t-books-endurance.rs"
+
+[dependencies]
+rusqlite = { version = "0.32", features = ["bundled"] }
+argon2 = "0.5"
+getrandom = "0.2"
+thiserror = "1"
+dirs = "5"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+zip = { version = "0.6", default-features = false, features = ["deflate"] }
+rfd = { version = "0.14", optional = true }
+tauri = { version = "2", optional = true }
+jsonwebtoken = "9"
+ureq = { version = "2.12", features = ["json"] }
+
+[build-dependencies]
+tauri-build = { version = "2", optional = true }
+
+[features]
+default = []
+desktop = ["dep:tauri", "dep:tauri-build", "dep:rfd"]
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

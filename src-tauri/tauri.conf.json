@@ -1,0 +1,55 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "T Books",
+  "version": "1.0.0",
+  "identifier": "com.tbooks.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:8080",
+    "beforeBuildCommand": "npm run build:tauri",
+    "frontendDist": "../dist/client",
+    "features": ["desktop"]
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "T Books",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 960,
+        "minHeight": 640,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": true,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": null,
+      "capabilities": ["default"]
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "publisher": "T Books",
+    "shortDescription": "Office register for this PC",
+    "longDescription": "T Books is an offline-first voucher register. Each person installs their own copy. Local SQLite lives under the user profile, not Program Files.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/256x256.png",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "displayLanguageSelector": false,
+        "installerIcon": "icons/icon.ico",
+        "startMenuFolder": "T Books",
+        "installerHooks": "windows/hooks.nsh"
+      }
+    }
+  }
+}
