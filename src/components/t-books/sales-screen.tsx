@@ -152,7 +152,9 @@ export default function SalesScreen({
     return savedPo;
   }, [draft, reload]);
 
-  useRegisterUnsaved(dirty, persist);
+  useRegisterUnsaved(dirty, async () => {
+    await persist();
+  });
 
   async function openEdit(id: number) {
     setBusy(true);
@@ -261,7 +263,7 @@ export default function SalesScreen({
                 key={kind}
                 type="button"
                 className={cn(
-                  "pressable h-11 rounded-md px-4 text-sm capitalize",
+                  "h-11 rounded-md px-4 text-sm capitalize",
                   draft.kind === kind ? "bg-navy text-paper-raised" : "bg-paper-sunken text-ink-muted",
                 )}
                 onClick={() => setDraft({ ...draft, kind })}
@@ -334,7 +336,7 @@ export default function SalesScreen({
                     key={unit}
                     type="button"
                     className={cn(
-                      "pressable h-11 rounded-md px-3 text-sm capitalize",
+                      "h-11 rounded-md px-3 text-sm capitalize",
                       draft.termUnit === unit ? "bg-navy text-paper-raised" : "bg-paper-sunken text-ink-muted",
                     )}
                     onClick={() => setDraft({ ...draft, termUnit: unit })}
@@ -382,7 +384,7 @@ export default function SalesScreen({
               <dd className="mt-1 font-medium tabular-nums">{formatRupees(received)}</dd>
             </div>
             <div className="rounded-lg bg-navy-soft px-3 py-2">
-              <dt className="text-xs uppercase tracking-wide text-navy">Grand / balance</dt>
+              <dt className="text-xs uppercase tracking-wide text-ink-subtle">Grand / balance</dt>
               <dd className="mt-1 text-sm tabular-nums text-navy">
                 {formatRupees(grand)} · {formatRupees(balance)}
               </dd>
