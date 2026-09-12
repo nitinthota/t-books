@@ -1,6 +1,6 @@
 import type { Database, SqlValue } from "sql.js";
 import { IDB_NAME, IDB_SQLITE_KEY, IDB_STORE } from "./constants";
-import { SCHEMA_SQL, appVersionSql, logicVersionSql, schemaVersionSql, VOUCHER_COLUMN_MIGRATIONS } from "./schema";
+import { OFFICE_COLUMN_MIGRATIONS, SCHEMA_SQL, VOUCHER_COLUMN_MIGRATIONS, appVersionSql, logicVersionSql, schemaVersionSql } from "./schema";
 
 let db: Database | null = null;
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
@@ -113,6 +113,7 @@ export async function openLocalBooks(): Promise<void> {
   db = existing ? new SQL.Database(existing) : new SQL.Database();
   db.exec(SCHEMA_SQL);
   migrateVoucherColumns();
+  migrateOfficeColumns();
   const version = schemaVersionSql();
   db.run(version.sql, version.params);
   const logic = logicVersionSql();
@@ -136,6 +137,15 @@ function migrateVoucherColumns(): void {
   getDb().run(
     "UPDATE vouchers SET source_hash = fingerprint WHERE (source_hash IS NULL OR source_hash = '') AND fingerprint IS NOT NULL AND fingerprint != ''",
   );
+}
+
+function migrateOfficeColumns(): void {
+  for (const col of OFFICE_COLUMN_MIGRATIONS) {
+    const info = all<{ name: string }>(`PRAGMA table_info(${col.table})`);
+    const names = new Set(info.map((row) => String(row.name)));
+    if (names.has(col.name)) continue;
+    getDb().run(`ALTER TABLE ${col.table} ADD COLUMN ${col.name} ${col.decl}`);
+  }
 }
 
 export function getDb(): Database {
@@ -215,6 +225,7 @@ export async function replaceFromBytes(bytes: Uint8Array): Promise<void> {
   db = new SQL.Database(bytes);
   db.exec(SCHEMA_SQL);
   migrateVoucherColumns();
+  migrateOfficeColumns();
   const version = schemaVersionSql();
   db.run(version.sql, version.params);
   const logic = logicVersionSql();

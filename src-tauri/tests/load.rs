@@ -33,6 +33,7 @@ fn five_users_normal_office_day() {
                 gst: String::new(),
                 items: vec![PoItemIn {
                     id: None,
+                    item_name: String::new(),
                     description: "Line".into(),
                     qty: 1.0,
                     rate: 10.0,

@@ -31,15 +31,18 @@ pub fn is_na_tax_inv(raw: &str) -> bool {
 }
 
 /// Invoice / paid / tax-invoice → register status. Do not restyle these strings.
+/// Loopbook rounds each side to paise, then subtracts.
 pub fn payment_status(invoice: f64, payment: f64, tax_inv: &str) -> String {
-    let out = super::money::js_round(invoice - payment);
+    let inv = super::money::js_round(invoice * 100.0);
+    let pay = super::money::js_round(payment * 100.0);
+    let out = inv - pay;
     if out < 0 {
         return "Advance Payment".into();
     }
     if tax_inv.trim().is_empty() {
         return "Missing Tax Invoice".into();
     }
-    if payment == 0.0 {
+    if pay == 0 {
         return "Pending Payment".into();
     }
     if out == 0 {
@@ -86,6 +89,9 @@ mod tests {
         assert_eq!(payment_status(100.0, 100.0, "INV"), "Full Payment");
         assert_eq!(payment_status(100.0, 120.0, "INV"), "Advance Payment");
         assert_eq!(payment_status(100.0, 0.0, ""), "Missing Tax Invoice");
+        // Each side rounded to paise: 10.004 − 10.006 would look full if subtracted first.
+        assert_eq!(payment_status(10.004, 10.006, "INV"), "Advance Payment");
+        assert_eq!(payment_status(10.006, 10.004, "INV"), "Partial Payment");
     }
 
     #[test]

@@ -39,6 +39,31 @@ pub fn format_rupees(rupees: Option<f64>) -> String {
     }
 }
 
+pub fn format_qty(qty: f64) -> String {
+    if !qty.is_finite() {
+        return "—".into();
+    }
+    let sign = if qty < 0.0 { "-" } else { "" };
+    let abs = qty.abs();
+    let trunc = abs.trunc() as u64;
+    let frac = abs - abs.trunc();
+    if frac.abs() < 1e-12 {
+        return format!("{sign}{}", group_en_in(trunc));
+    }
+    let mut decimals = format!("{frac:.3}");
+    if let Some(stripped) = decimals.strip_prefix("0.") {
+        decimals = stripped.to_string();
+    } else {
+        decimals = decimals.trim_start_matches("0.").to_string();
+    }
+    let decimals = decimals.trim_end_matches('0');
+    if decimals.is_empty() {
+        format!("{sign}{}", group_en_in(trunc))
+    } else {
+        format!("{sign}{}.{}", group_en_in(trunc), decimals)
+    }
+}
+
 fn group_en_in(n: u64) -> String {
     let s = n.to_string();
     if s.len() <= 3 {
@@ -93,5 +118,8 @@ mod tests {
         assert_eq!(format_inr(0), "₹0.00");
         let s = format_inr(10_000_000);
         assert!(s.contains("₹1,00,000"), "{s}");
+        assert_eq!(format_qty(f64::NAN), "—");
+        assert_eq!(format_qty(12.5), "12.5");
+        assert_eq!(format_qty(1000.0), "1,000");
     }
 }

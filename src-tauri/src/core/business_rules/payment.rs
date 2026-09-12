@@ -82,7 +82,7 @@ pub fn parse_amount(raw: &str) -> Option<f64> {
     }
 }
 
-/// Column A: `20.0` → `20`. `20.1` stays invalid as a voucher number.
+/// Column A: `20.0` → `20`. `20.1` is a dotted child serial, never a voucher.
 pub fn normalize_voucher_no(raw: &str) -> String {
     let s = raw.trim();
     if looks_like_trailing_zero_decimal(s) {
@@ -106,6 +106,55 @@ fn looks_like_trailing_zero_decimal(s: &str) -> bool {
         && head.chars().all(|c| c.is_ascii_digit())
         && !frac.is_empty()
         && frac.chars().all(|c| c == '0')
+}
+
+/// `20.1` — a child serial. Never a books row. `20.0` is not dotted (normalizes to 20).
+pub fn is_dotted_child_serial(raw: &str) -> bool {
+    let s = raw.trim();
+    let mut parts = s.split('.');
+    let Some(head) = parts.next() else {
+        return false;
+    };
+    let Some(frac) = parts.next() else {
+        return false;
+    };
+    if parts.next().is_some() {
+        return false;
+    }
+    if head.is_empty() || !head.chars().all(|c| c.is_ascii_digit()) {
+        return false;
+    }
+    if frac.is_empty() || !frac.chars().all(|c| c.is_ascii_digit()) {
+        return false;
+    }
+    !frac.chars().all(|c| c == '0')
+}
+
+/// Dummy / sample tokens are not real books. Never allocate from them.
+pub fn is_dummy_serial(raw: &str) -> bool {
+    let s = raw.trim().to_ascii_uppercase();
+    s.starts_with("VOUCHER_")
+        || s.starts_with("SAMPLE")
+        || s.starts_with("CUST_")
+        || s.starts_with("VEND_")
+}
+
+/// Import skip: empty vendor, dotted child, dummy serial, or non-integer A longer than 12.
+pub fn should_skip_sheet_row(serial: &str, vendor: &str) -> bool {
+    let serial = normalize_voucher_no(serial);
+    if vendor.trim().is_empty() {
+        return true;
+    }
+    if is_dotted_child_serial(&serial) {
+        return true;
+    }
+    if is_dummy_serial(&serial) {
+        return true;
+    }
+    if !serial.is_empty() && parse_voucher_number(&serial).is_none() && serial.len() > 12 {
+        return true;
+    }
+    false
 }
 
 pub fn parse_voucher_number(raw: &str) -> Option<i64> {
@@ -243,6 +292,18 @@ mod tests {
         assert_eq!(parse_voucher_number(" 20.000 "), Some(20));
         assert_eq!(parse_voucher_number("20.1"), None);
         assert_eq!(parse_voucher_number("VOUCHER_1001"), None);
+        assert!(is_dotted_child_serial("20.1"));
+        assert!(!is_dotted_child_serial("20.0"));
+        assert!(!is_dotted_child_serial("20"));
+        assert!(is_dummy_serial("VOUCHER_1001"));
+        assert!(is_dummy_serial("SAMPLE-ROW"));
+        assert!(is_dummy_serial("CUST_01"));
+        assert!(is_dummy_serial("VEND_02"));
+        assert!(!is_dummy_serial("PUR-0001"));
+        assert!(should_skip_sheet_row("20", ""));
+        assert!(should_skip_sheet_row("20.1", "VEND_02"));
+        assert!(should_skip_sheet_row("VOUCHER_1001", "VEND_02"));
+        assert!(!should_skip_sheet_row("20", "VEND_02"));
     }
 
     #[test]

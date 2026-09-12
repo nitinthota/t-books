@@ -5,7 +5,9 @@ import {
 } from "./constants";
 import { all, exec, getMeta, withTransaction } from "./db";
 import { isHardcodedOwner, isRole, normalizeEmail } from "./rbac";
+import { canMutate } from "./business_rules";
 import { isBrowserOnline } from "./online";
+import { invokeCommand, isTauriRuntime } from "./platform";
 import type { AccessRow, AccessSnapshot, Role } from "./types";
 
 type CacheRow = {
@@ -22,11 +24,13 @@ export function normalizeActive(raw: string): "Yes" | "No" {
   return "No";
 }
 
-export function normalizeRole(raw: string): Role {
+export function normalizeRole(raw: string): string {
   const value = raw.trim().toLowerCase();
   if (value === "owner") return "owner";
   if (value === "admin") return "admin";
-  return "operator";
+  if (value === "operator") return "operator";
+  if (value === "viewer") return "viewer";
+  return value;
 }
 
 export function isActiveYes(active: string): boolean {
@@ -149,8 +153,9 @@ export function accessDenialMessage(email: string): string | null {
   if (isHardcodedOwner(email)) return null;
   const row = findAccessRow(email);
   if (!row) return "This email is not on the Access list for this PC.";
-  if (isActiveYes(row.active)) return null;
-  return "This email is not active on the Access list.";
+  if (!isActiveYes(row.active)) return "This email is not active on the Access list.";
+  if (!canMutate(row.role)) return "Your role cannot open T Books.";
+  return null;
 }
 
 export function sessionRole(email: string): Role {
@@ -165,6 +170,21 @@ export function sessionRole(email: string): Role {
 export async function refreshAccess(): Promise<AccessSnapshot> {
   if (!isBrowserOnline()) {
     throw new Error(OFFLINE_REFRESH_ERROR);
+  }
+  throw new Error(CREDENTIALS_MISSING_ERROR);
+}
+
+export async function writeAccessRow(payload: {
+  name: string;
+  email: string;
+  role: string;
+  active: string;
+}): Promise<AccessRow> {
+  if (isTauriRuntime()) {
+    return invokeCommand<AccessRow>("write_access_row", { payload });
+  }
+  if (!isBrowserOnline()) {
+    throw new Error("This PC is offline. Cannot submit to Google.");
   }
   throw new Error(CREDENTIALS_MISSING_ERROR);
 }

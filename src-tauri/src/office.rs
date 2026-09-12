@@ -4,15 +4,20 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::core::business_rules::{
-    calc_payroll, calc_po, calc_po_item, paise_to_rupees, PoItemInput, TermUnit,
+    alloc_method_for_purchase, calc_payroll, calc_po, calc_po_item, calc_salary_slip,
+    classify_purchase_payment, keep_posted_pay_number, next_payment_number, next_purchase_number,
+    next_salary_number, normalize_alloc_method, normalize_pay_kind, paise_to_rupees,
+    purchase_pay_status, rupees_to_paise, salary_period_taken, PoItemInput, SalaryPeriodRow, TermUnit,
 };
 use crate::db::LocalBooks;
 use crate::{BooksError, Result};
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PoItemIn {
     pub id: Option<i64>,
+    #[serde(default)]
+    pub item_name: String,
     pub description: String,
     pub qty: f64,
     pub rate: f64,
@@ -69,10 +74,22 @@ pub struct PurchasePo {
     pub created_at: String,
     pub updated_at: String,
     #[serde(default)]
+    pub goods_received: bool,
+    #[serde(default)]
+    pub tax_invoice_no: String,
+    #[serde(default)]
+    pub tax_invoice_date: String,
+    #[serde(default)]
+    pub is_dirty: bool,
+    #[serde(default)]
+    pub paid_rupees: f64,
+    #[serde(default)]
+    pub pay_status: String,
+    #[serde(default)]
     pub items: Vec<PoItemIn>,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PurchasePoSave {
     pub id: Option<i64>,
@@ -83,18 +100,61 @@ pub struct PurchasePoSave {
     pub po_type: String,
     pub total_value: f64,
     pub items: Vec<PoItemIn>,
+    #[serde(default)]
+    pub goods_received: bool,
+    #[serde(default)]
+    pub tax_invoice_no: String,
+    #[serde(default)]
+    pub tax_invoice_date: String,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PurchasePayment {
+    pub id: Option<i64>,
+    pub pay_number: String,
+    pub po_number: String,
+    pub vendor: String,
+    pub project: String,
+    pub amount_rupees: f64,
+    pub alloc_method: String,
+    pub pay_class: String,
+    pub missing_tax_invoice: bool,
+    pub pay_date: String,
+    pub remarks: String,
+    #[serde(default)]
+    pub is_dirty: bool,
+}
+
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PurchasePaymentSave {
+    pub id: Option<i64>,
+    pub pay_number: String,
+    pub po_number: String,
+    pub vendor: String,
+    pub amount_rupees: f64,
+    pub alloc_method: String,
+    pub pay_date: String,
+    pub remarks: String,
+}
+
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HrPerson {
     pub id: Option<i64>,
     pub name: String,
     pub role: String,
     pub salary: f64,
+    #[serde(default = "default_active_yes")]
+    pub active: String,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+fn default_active_yes() -> String {
+    "Yes".into()
+}
+
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PayrollRow {
     pub id: Option<i64>,
@@ -108,6 +168,18 @@ pub struct PayrollRow {
     pub pf_total: f64,
     pub tds: f64,
     pub total_paid: f64,
+    #[serde(default)]
+    pub salary_number: String,
+    #[serde(default)]
+    pub pay_kind: String,
+    #[serde(default)]
+    pub salary_rupees: f64,
+    #[serde(default)]
+    pub recovery_rupees: f64,
+    #[serde(default)]
+    pub net_rupees: f64,
+    #[serde(default)]
+    pub is_dirty: bool,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -220,6 +292,7 @@ fn touch_vendor(conn: &Connection, vendor: &str) -> Result<()> {
 
 fn to_po_input(item: &PoItemIn) -> PoItemInput {
     PoItemInput {
+        item_name: item.item_name.clone(),
         description: item.description.clone(),
         qty: finite(item.qty),
         unit_rate_rupees: finite(item.rate),
@@ -235,6 +308,11 @@ pub fn preview_po(items: &[PoItemIn]) -> PoPreview {
         .zip(summary.items.iter())
         .map(|(src, calc)| PoItemIn {
             id: src.id,
+            item_name: if src.item_name.trim().is_empty() {
+                calc.item_name.clone()
+            } else {
+                src.item_name.clone()
+            },
             description: calc.description.clone(),
             qty: calc.qty,
             rate: src.rate,
@@ -252,17 +330,18 @@ pub fn preview_po(items: &[PoItemIn]) -> PoPreview {
 
 fn load_items(conn: &Connection, table: &str, po_id: i64) -> Result<Vec<PoItemIn>> {
     let sql = format!(
-        "SELECT id, description, qty, rate, gst_pct, amount FROM {table} WHERE po_id = ?1 ORDER BY id"
+        "SELECT id, COALESCE(item_name,''), description, qty, rate, gst_pct, amount FROM {table} WHERE po_id = ?1 ORDER BY id"
     );
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map(params![po_id], |row| {
         Ok(PoItemIn {
             id: Some(row.get(0)?),
-            description: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
-            qty: row.get::<_, Option<f64>>(2)?.unwrap_or(0.0),
-            rate: row.get::<_, Option<f64>>(3)?.unwrap_or(0.0),
-            gst_pct: row.get::<_, Option<f64>>(4)?.unwrap_or(0.0),
-            amount: row.get::<_, Option<f64>>(5)?.unwrap_or(0.0),
+            item_name: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+            description: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
+            qty: row.get::<_, Option<f64>>(3)?.unwrap_or(0.0),
+            rate: row.get::<_, Option<f64>>(4)?.unwrap_or(0.0),
+            gst_pct: row.get::<_, Option<f64>>(5)?.unwrap_or(0.0),
+            amount: row.get::<_, Option<f64>>(6)?.unwrap_or(0.0),
         })
     })?;
     let mut items = Vec::new();
@@ -275,13 +354,19 @@ fn load_items(conn: &Connection, table: &str, po_id: i64) -> Result<Vec<PoItemIn
 fn replace_items(conn: &Connection, table: &str, po_id: i64, items: &[PoItemIn]) -> Result<()> {
     conn.execute(&format!("DELETE FROM {table} WHERE po_id = ?1"), params![po_id])?;
     let sql = format!(
-        "INSERT INTO {table} (po_id, description, qty, rate, gst_pct, amount) VALUES (?1, ?2, ?3, ?4, ?5, ?6)"
+        "INSERT INTO {table} (po_id, item_name, description, qty, rate, gst_pct, amount) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"
     );
     let mut stmt = conn.prepare(&sql)?;
     for item in items {
         let calc = calc_po_item(&to_po_input(item));
+        let name = if item.item_name.trim().is_empty() {
+            calc.item_name.clone()
+        } else {
+            trim(&item.item_name)
+        };
         stmt.execute(params![
             po_id,
+            name,
             calc.description,
             calc.qty,
             finite(item.rate),
@@ -412,29 +497,108 @@ pub fn delete_sales_po(books: &LocalBooks, id: i64) -> Result<()> {
     Ok(())
 }
 
+fn paid_for_po(conn: &Connection, po_number: &str) -> f64 {
+    conn.query_row(
+        "SELECT COALESCE(SUM(amount_rupees), 0) FROM purchase_payments WHERE po_number = ?1 COLLATE NOCASE",
+        params![po_number],
+        |row| row.get::<_, f64>(0),
+    )
+    .unwrap_or(0.0)
+}
+
+fn list_purchase_numbers(conn: &Connection) -> Result<Vec<String>> {
+    let mut stmt = conn.prepare("SELECT po_number FROM purchase_po WHERE TRIM(po_number) != ''")?;
+    let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(out)
+}
+
+fn list_pay_numbers(conn: &Connection) -> Result<Vec<String>> {
+    let mut stmt =
+        conn.prepare("SELECT pay_number FROM purchase_payments WHERE TRIM(pay_number) != ''")?;
+    let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(out)
+}
+
+fn list_salary_numbers(conn: &Connection) -> Result<Vec<String>> {
+    let mut stmt = conn.prepare(
+        "SELECT salary_number FROM hr_payroll WHERE TRIM(COALESCE(salary_number,'')) != ''",
+    )?;
+    let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(out)
+}
+
+fn po_number_taken(conn: &Connection, po_number: &str, skip_id: Option<i64>) -> Result<bool> {
+    let id: Option<i64> = conn
+        .query_row(
+            "SELECT id FROM purchase_po WHERE po_number = ?1 COLLATE NOCASE LIMIT 1",
+            params![po_number],
+            |row| row.get(0),
+        )
+        .optional()?;
+    Ok(match id {
+        Some(found) => skip_id != Some(found),
+        None => false,
+    })
+}
+
 fn map_purchase(row: &rusqlite::Row<'_>) -> rusqlite::Result<PurchasePo> {
+    let po_number: String = row.get::<_, Option<String>>(3)?.unwrap_or_default();
+    let total_value: f64 = row.get::<_, Option<f64>>(5)?.unwrap_or(0.0);
+    let tax_invoice_no: String = row.get::<_, Option<String>>(9)?.unwrap_or_default();
+    let tax_invoice_date: String = row.get::<_, Option<String>>(10)?.unwrap_or_default();
     Ok(PurchasePo {
         id: row.get(0)?,
         project: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
         vendor: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
-        po_number: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
+        po_number,
         po_type: row.get::<_, Option<String>>(4)?.unwrap_or_else(|| "contract".into()),
-        total_value: row.get::<_, Option<f64>>(5)?.unwrap_or(0.0),
+        total_value,
         created_at: row.get::<_, Option<String>>(6)?.unwrap_or_default(),
         updated_at: row.get::<_, Option<String>>(7)?.unwrap_or_default(),
+        goods_received: row.get::<_, i64>(8).unwrap_or(0) != 0,
+        tax_invoice_no,
+        tax_invoice_date,
+        is_dirty: row.get::<_, i64>(11).unwrap_or(0) != 0,
+        paid_rupees: 0.0,
+        pay_status: String::new(),
         items: Vec::new(),
     })
 }
 
+fn decorate_purchase(conn: &Connection, mut po: PurchasePo) -> PurchasePo {
+    po.paid_rupees = paid_for_po(conn, &po.po_number);
+    po.pay_status = purchase_pay_status(
+        rupees_to_paise(po.total_value),
+        rupees_to_paise(po.paid_rupees),
+    )
+    .as_str()
+    .into();
+    po
+}
+
 pub fn list_purchase_po(books: &LocalBooks) -> Result<Vec<PurchasePo>> {
     let mut stmt = books.conn().prepare(
-        "SELECT id, project, vendor, po_number, type, total_value, created_at, updated_at
+        "SELECT id, project, vendor, po_number, type, total_value, created_at, updated_at,
+                COALESCE(goods_received,0), COALESCE(tax_invoice_no,''), COALESCE(tax_invoice_date,''),
+                COALESCE(is_dirty,0)
          FROM purchase_po ORDER BY updated_at DESC, id DESC",
     )?;
     let rows = stmt.query_map([], map_purchase)?;
     let mut out = Vec::new();
     for row in rows {
-        out.push(row?);
+        out.push(decorate_purchase(books.conn(), row?));
     }
     Ok(out)
 }
@@ -443,7 +607,9 @@ pub fn get_purchase_po(books: &LocalBooks, id: i64) -> Result<PurchasePo> {
     let mut po = books
         .conn()
         .query_row(
-            "SELECT id, project, vendor, po_number, type, total_value, created_at, updated_at
+            "SELECT id, project, vendor, po_number, type, total_value, created_at, updated_at,
+                    COALESCE(goods_received,0), COALESCE(tax_invoice_no,''), COALESCE(tax_invoice_date,''),
+                    COALESCE(is_dirty,0)
              FROM purchase_po WHERE id = ?1",
             params![id],
             map_purchase,
@@ -451,18 +617,43 @@ pub fn get_purchase_po(books: &LocalBooks, id: i64) -> Result<PurchasePo> {
         .optional()?
         .ok_or_else(|| BooksError::from("That purchase PO was not found on this PC."))?;
     po.items = load_items(books.conn(), "purchase_po_items", id)?;
-    Ok(po)
+    Ok(decorate_purchase(books.conn(), po))
 }
 
 pub fn save_purchase_po(books: &mut LocalBooks, payload: PurchasePoSave) -> Result<PurchasePo> {
     let project = require_text(&payload.project, "Project")?;
-    let po_number = require_text(&payload.po_number, "PO number")?;
     let vendor = require_text(&payload.vendor, "Vendor")?;
     let po_type = if trim(&payload.po_type).eq_ignore_ascii_case("simple") {
         "simple"
     } else {
         "contract"
     };
+    let existing_number = if let Some(id) = payload.id {
+        books
+            .conn()
+            .query_row(
+                "SELECT po_number FROM purchase_po WHERE id = ?1",
+                params![id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
+    let requested = trim(&payload.po_number);
+    let po_number = if !existing_number.is_empty() {
+        keep_posted_pay_number(&existing_number, &requested)
+    } else if requested.is_empty() {
+        next_purchase_number(&list_purchase_numbers(books.conn())?)
+    } else {
+        requested
+    };
+    if po_number_taken(books.conn(), &po_number, payload.id)? {
+        return Err(BooksError::from(
+            "A purchase bill with this number already exists.",
+        ));
+    }
     if po_exists(
         books.conn(),
         "purchase_po",
@@ -480,14 +671,20 @@ pub fn save_purchase_po(books: &mut LocalBooks, payload: PurchasePoSave) -> Resu
         let preview = preview_po(&payload.items);
         (preview.grand_total, payload.items.clone())
     };
+    let goods = if payload.goods_received { 1i64 } else { 0 };
+    let tax_no = trim(&payload.tax_invoice_no);
+    let tax_date = trim(&payload.tax_invoice_date);
     let tx = books.conn_mut().transaction()?;
     touch_project(&tx, &project)?;
     touch_vendor(&tx, &vendor)?;
     let id = if let Some(existing) = payload.id {
         let changed = tx.execute(
             "UPDATE purchase_po SET project = ?1, vendor = ?2, po_number = ?3, type = ?4,
-             total_value = ?5, updated_at = datetime('now') WHERE id = ?6",
-            params![project, vendor, po_number, po_type, total, existing],
+             total_value = ?5, goods_received = ?6, tax_invoice_no = ?7, tax_invoice_date = ?8,
+             is_dirty = 1, updated_at = datetime('now') WHERE id = ?9",
+            params![
+                project, vendor, po_number, po_type, total, goods, tax_no, tax_date, existing
+            ],
         )?;
         if changed == 0 {
             return Err(BooksError::from(
@@ -497,16 +694,17 @@ pub fn save_purchase_po(books: &mut LocalBooks, payload: PurchasePoSave) -> Resu
         existing
     } else {
         tx.execute(
-            "INSERT INTO purchase_po (project, vendor, po_number, type, total_value, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, datetime('now'), datetime('now'))",
-            params![project, vendor, po_number, po_type, total],
+            "INSERT INTO purchase_po (project, vendor, po_number, type, total_value, goods_received,
+             tax_invoice_no, tax_invoice_date, is_dirty, hive_rev, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1, 0, datetime('now'), datetime('now'))",
+            params![project, vendor, po_number, po_type, total, goods, tax_no, tax_date],
         )?;
         tx.last_insert_rowid()
     };
     replace_items(&tx, "purchase_po_items", id, &items)?;
     tx.commit().map_err(|err| {
         if is_unique_violation(&err) {
-            BooksError::from("A purchase PO with this number already exists on this project.")
+            BooksError::from("A purchase bill with this number already exists.")
         } else {
             err.into()
         }
@@ -526,19 +724,207 @@ pub fn delete_purchase_po(books: &LocalBooks, id: i64) -> Result<()> {
     Ok(())
 }
 
+fn map_payment(row: &rusqlite::Row<'_>) -> rusqlite::Result<PurchasePayment> {
+    Ok(PurchasePayment {
+        id: Some(row.get(0)?),
+        pay_number: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+        po_number: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
+        vendor: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
+        project: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
+        amount_rupees: row.get::<_, Option<f64>>(5)?.unwrap_or(0.0),
+        alloc_method: row.get::<_, Option<String>>(6)?.unwrap_or_default(),
+        pay_class: row.get::<_, Option<String>>(7)?.unwrap_or_default(),
+        missing_tax_invoice: row.get::<_, i64>(8).unwrap_or(0) != 0,
+        pay_date: row.get::<_, Option<String>>(9)?.unwrap_or_default(),
+        remarks: row.get::<_, Option<String>>(10)?.unwrap_or_default(),
+        is_dirty: row.get::<_, i64>(11).unwrap_or(0) != 0,
+    })
+}
+
+const PAYMENT_SELECT: &str = "SELECT id, pay_number, po_number, vendor, project, amount_rupees,
+        alloc_method, pay_class, COALESCE(missing_tax_invoice,0), COALESCE(pay_date,''),
+        COALESCE(remarks,''), COALESCE(is_dirty,0)
+ FROM purchase_payments";
+
+pub fn list_purchase_payments(
+    books: &LocalBooks,
+    po_number: Option<&str>,
+) -> Result<Vec<PurchasePayment>> {
+    let po = po_number.unwrap_or("").trim();
+    if po.is_empty() {
+        let sql = format!("{PAYMENT_SELECT} ORDER BY pay_number COLLATE NOCASE, id");
+        let mut stmt = books.conn().prepare(&sql)?;
+        let rows = stmt.query_map([], map_payment)?;
+        return rows
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(Into::into);
+    }
+    let sql = format!(
+        "{PAYMENT_SELECT} WHERE po_number = ?1 COLLATE NOCASE ORDER BY pay_number COLLATE NOCASE, id"
+    );
+    let mut stmt = books.conn().prepare(&sql)?;
+    let rows = stmt.query_map(params![po], map_payment)?;
+    rows.collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(Into::into)
+}
+
+pub fn save_purchase_payment(
+    books: &mut LocalBooks,
+    payload: PurchasePaymentSave,
+) -> Result<PurchasePayment> {
+    let po_number = require_text(&payload.po_number, "Purchase number")?;
+    let amount = finite(payload.amount_rupees);
+    if amount <= 0.0 {
+        return Err(BooksError::from("Payment amount must be greater than zero."));
+    }
+    let po = books
+        .conn()
+        .query_row(
+            "SELECT vendor, project, total_value, COALESCE(goods_received,0),
+                    COALESCE(tax_invoice_no,''), COALESCE(tax_invoice_date,'')
+             FROM purchase_po WHERE po_number = ?1 COLLATE NOCASE LIMIT 1",
+            params![po_number],
+            |row| {
+                Ok((
+                    row.get::<_, Option<String>>(0)?.unwrap_or_default(),
+                    row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                    row.get::<_, Option<f64>>(2)?.unwrap_or(0.0),
+                    row.get::<_, i64>(3).unwrap_or(0) != 0,
+                    row.get::<_, Option<String>>(4)?.unwrap_or_default(),
+                    row.get::<_, Option<String>>(5)?.unwrap_or_default(),
+                ))
+            },
+        )
+        .optional()?
+        .ok_or_else(|| BooksError::from("That purchase bill was not found on this PC."))?;
+    let (po_vendor, project, grand, goods, tax_no, tax_date) = po;
+    let vendor = if trim(&payload.vendor).is_empty() {
+        po_vendor
+    } else {
+        trim(&payload.vendor)
+    };
+    let existing_number = if let Some(id) = payload.id {
+        books
+            .conn()
+            .query_row(
+                "SELECT pay_number FROM purchase_payments WHERE id = ?1",
+                params![id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
+    let requested = trim(&payload.pay_number);
+    let pay_number = if !existing_number.is_empty() {
+        keep_posted_pay_number(&existing_number, &requested)
+    } else if requested.is_empty() {
+        next_payment_number(&list_pay_numbers(books.conn())?, Some(&po_number))
+    } else {
+        requested
+    };
+    let skip_id = payload.id.unwrap_or(-1);
+    let paid_before: f64 = books.conn().query_row(
+        "SELECT COALESCE(SUM(amount_rupees),0) FROM purchase_payments
+         WHERE po_number = ?1 COLLATE NOCASE AND id != ?2",
+        params![po_number, skip_id],
+        |row| row.get(0),
+    )?;
+    let missing_tax = crate::core::business_rules::tax_invoice_missing(
+        Some(tax_no.as_str()),
+        Some(tax_date.as_str()),
+    );
+    let (class, missing) = classify_purchase_payment(
+        goods,
+        missing_tax,
+        rupees_to_paise(grand),
+        rupees_to_paise(paid_before),
+        rupees_to_paise(amount),
+    );
+    let alloc = if trim(&payload.alloc_method).is_empty() {
+        alloc_method_for_purchase(goods)
+    } else {
+        normalize_alloc_method(Some(payload.alloc_method.as_str()))
+    };
+    let pay_date = trim(&payload.pay_date);
+    let remarks = trim(&payload.remarks);
+    let missing_i = if missing { 1i64 } else { 0 };
+    let id = if let Some(existing) = payload.id {
+        let n = books.conn().execute(
+            "UPDATE purchase_payments SET pay_number = ?1, po_number = ?2, vendor = ?3, project = ?4,
+             amount_rupees = ?5, alloc_method = ?6, pay_class = ?7, missing_tax_invoice = ?8,
+             pay_date = ?9, remarks = ?10, is_dirty = 1, updated_at = datetime('now') WHERE id = ?11",
+            params![
+                pay_number,
+                po_number,
+                vendor,
+                project,
+                amount,
+                alloc.as_str(),
+                class.as_str(),
+                missing_i,
+                pay_date,
+                remarks,
+                existing
+            ],
+        )?;
+        if n == 0 {
+            return Err(BooksError::from("That payment was not found on this PC."));
+        }
+        existing
+    } else {
+        books.conn().execute(
+            "INSERT INTO purchase_payments (pay_number, po_number, vendor, project, amount_rupees,
+             alloc_method, pay_class, missing_tax_invoice, pay_date, remarks, is_dirty, hive_rev,
+             created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 1, 0, datetime('now'), datetime('now'))",
+            params![
+                pay_number,
+                po_number,
+                vendor,
+                project,
+                amount,
+                alloc.as_str(),
+                class.as_str(),
+                missing_i,
+                pay_date,
+                remarks
+            ],
+        )?;
+        books.conn().last_insert_rowid()
+    };
+    let sql = format!("{PAYMENT_SELECT} WHERE id = ?1");
+    books
+        .conn()
+        .query_row(&sql, params![id], map_payment)
+        .map_err(Into::into)
+}
+
+pub fn delete_purchase_payment(books: &LocalBooks, id: i64) -> Result<()> {
+    let n = books
+        .conn()
+        .execute("DELETE FROM purchase_payments WHERE id = ?1", params![id])?;
+    if n == 0 {
+        return Err(BooksError::from("That payment was not found on this PC."));
+    }
+    Ok(())
+}
+
 fn map_person(row: &rusqlite::Row<'_>) -> rusqlite::Result<HrPerson> {
     Ok(HrPerson {
         id: Some(row.get(0)?),
         name: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
         role: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
         salary: row.get::<_, Option<f64>>(3)?.unwrap_or(0.0),
+        active: row.get::<_, Option<String>>(4)?.unwrap_or_else(|| "Yes".into()),
     })
 }
 
 pub fn list_hr_people(books: &LocalBooks) -> Result<Vec<HrPerson>> {
-    let mut stmt = books
-        .conn()
-        .prepare("SELECT id, name, role, salary FROM hr_people ORDER BY name COLLATE NOCASE, id")?;
+    let mut stmt = books.conn().prepare(
+        "SELECT id, name, role, salary, COALESCE(active,'Yes') FROM hr_people ORDER BY name COLLATE NOCASE, id",
+    )?;
     let rows = stmt.query_map([], map_person)?;
     let mut out = Vec::new();
     for row in rows {
@@ -551,10 +937,17 @@ pub fn save_hr_person(books: &LocalBooks, payload: HrPerson) -> Result<HrPerson>
     let name = require_text(&payload.name, "Name")?;
     let role = trim(&payload.role);
     let salary = finite(payload.salary);
+    let active = match trim(&payload.active).to_ascii_lowercase().as_str() {
+        "no" | "n" | "false" | "0" => "No".to_string(),
+        _ => "Yes".to_string(),
+    };
+    if active == "Yes" && salary <= 0.0 {
+        return Err(BooksError::from("Salary is required when a person is Active."));
+    }
     let id = if let Some(existing) = payload.id {
         let n = books.conn().execute(
-            "UPDATE hr_people SET name = ?1, role = ?2, salary = ?3 WHERE id = ?4",
-            params![name, role, salary, existing],
+            "UPDATE hr_people SET name = ?1, role = ?2, salary = ?3, active = ?4 WHERE id = ?5",
+            params![name, role, salary, active, existing],
         )?;
         if n == 0 {
             return Err(BooksError::from("That person was not found on this PC."));
@@ -562,15 +955,15 @@ pub fn save_hr_person(books: &LocalBooks, payload: HrPerson) -> Result<HrPerson>
         existing
     } else {
         books.conn().execute(
-            "INSERT INTO hr_people (name, role, salary) VALUES (?1, ?2, ?3)",
-            params![name, role, salary],
+            "INSERT INTO hr_people (name, role, salary, active) VALUES (?1, ?2, ?3, ?4)",
+            params![name, role, salary, active],
         )?;
         books.conn().last_insert_rowid()
     };
     books
         .conn()
         .query_row(
-            "SELECT id, name, role, salary FROM hr_people WHERE id = ?1",
+            "SELECT id, name, role, salary, COALESCE(active,'Yes') FROM hr_people WHERE id = ?1",
             params![id],
             map_person,
         )
@@ -591,6 +984,19 @@ fn payroll_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<PayrollRow> {
     let pf_employee: f64 = row.get::<_, Option<f64>>(4)?.unwrap_or(0.0);
     let pf_company: f64 = row.get::<_, Option<f64>>(5)?.unwrap_or(0.0);
     let tds: f64 = row.get::<_, Option<f64>>(6)?.unwrap_or(0.0);
+    let salary_rupees: f64 = row.get::<_, Option<f64>>(11)?.unwrap_or(0.0);
+    let recovery_rupees: f64 = row.get::<_, Option<f64>>(12)?.unwrap_or(0.0);
+    let pay_kind_raw: String = row.get::<_, Option<String>>(10)?.unwrap_or_default();
+    let kind = normalize_pay_kind(Some(pay_kind_raw.as_str()));
+    let slip = calc_salary_slip(
+        kind,
+        rupees_to_paise(salary_rupees),
+        rupees_to_paise(pf_employee),
+        rupees_to_paise(pf_company),
+        rupees_to_paise(tds),
+        rupees_to_paise(recovery_rupees),
+        rupees_to_paise(row.get::<_, Option<f64>>(7)?.unwrap_or(0.0)),
+    );
     let calc = calc_payroll(pf_company, pf_employee, tds);
     Ok(PayrollRow {
         id: Some(row.get(0)?),
@@ -601,23 +1007,39 @@ fn payroll_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<PayrollRow> {
         pf_company,
         pf_total: paise_to_rupees(calc.pf_total_paise),
         tds,
-        total_paid: row.get::<_, Option<f64>>(7)?.unwrap_or(0.0),
+        total_paid: paise_to_rupees(slip.net_paise),
+        salary_number: row.get::<_, Option<String>>(9)?.unwrap_or_default(),
+        pay_kind: kind.as_str().into(),
+        salary_rupees,
+        recovery_rupees: paise_to_rupees(slip.recovery_paise),
+        net_rupees: paise_to_rupees(slip.net_paise),
+        is_dirty: row.get::<_, i64>(13).unwrap_or(0) != 0,
     })
 }
 
+const PAYROLL_SELECT: &str = "SELECT p.id, p.person_id, h.name, p.month, p.pf_employee, p.pf_company, p.tds, p.total_paid,
+        h.salary, COALESCE(p.salary_number,''), COALESCE(p.pay_kind,'salary'),
+        COALESCE(p.salary_rupees,0), COALESCE(p.recovery_rupees,0), COALESCE(p.is_dirty,0)
+ FROM hr_payroll p JOIN hr_people h ON h.id = p.person_id";
+
 pub fn list_hr_payroll(books: &LocalBooks) -> Result<Vec<PayrollRow>> {
-    let mut stmt = books.conn().prepare(
-        "SELECT p.id, p.person_id, h.name, p.month, p.pf_employee, p.pf_company, p.tds, p.total_paid
-         FROM hr_payroll p
-         JOIN hr_people h ON h.id = p.person_id
-         ORDER BY p.month DESC, h.name COLLATE NOCASE",
-    )?;
+    let sql = format!("{PAYROLL_SELECT} ORDER BY p.month DESC, h.name COLLATE NOCASE");
+    let mut stmt = books.conn().prepare(&sql)?;
     let rows = stmt.query_map([], payroll_from_row)?;
     let mut out = Vec::new();
     for row in rows {
         out.push(row?);
     }
     Ok(out)
+}
+
+fn parse_month_parts(month: &str) -> Option<(i32, i32)> {
+    if !valid_month(month) {
+        return None;
+    }
+    let year: i32 = month[..4].parse().ok()?;
+    let m: i32 = month[5..7].parse().ok()?;
+    Some((m, year))
 }
 
 pub fn save_hr_payroll(books: &LocalBooks, payload: PayrollRow) -> Result<PayrollRow> {
@@ -628,37 +1050,116 @@ pub fn save_hr_payroll(books: &LocalBooks, payload: PayrollRow) -> Result<Payrol
     if !valid_month(&month) {
         return Err(BooksError::from("Month must be YYYY-MM."));
     }
-    let exists: i64 = books.conn().query_row(
-        "SELECT COUNT(*) FROM hr_people WHERE id = ?1",
-        params![payload.person_id],
-        |row| row.get(0),
-    )?;
-    if exists == 0 {
-        return Err(BooksError::from("That person was not found on this PC."));
-    }
-    let pf_employee = finite(payload.pf_employee);
-    let pf_company = finite(payload.pf_company);
-    let tds = finite(payload.tds);
-    let total_paid = finite(payload.total_paid);
-    let taken: Option<i64> = books
+    let person: (String, f64, String) = books
         .conn()
         .query_row(
-            "SELECT id FROM hr_payroll WHERE person_id = ?1 AND month = ?2 LIMIT 1",
-            params![payload.person_id, month],
-            |row| row.get(0),
+            "SELECT name, salary, COALESCE(active,'Yes') FROM hr_people WHERE id = ?1",
+            params![payload.person_id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<f64>>(1)?.unwrap_or(0.0),
+                    row.get::<_, Option<String>>(2)?.unwrap_or_else(|| "Yes".into()),
+                ))
+            },
         )
-        .optional()?;
-    if let Some(found) = taken {
-        if payload.id != Some(found) {
+        .optional()?
+        .ok_or_else(|| BooksError::from("That person was not found on this PC."))?;
+    let (person_name, person_salary, active) = person;
+    let kind = normalize_pay_kind(Some(payload.pay_kind.as_str()));
+    let (period_month, period_year) = parse_month_parts(&month)
+        .ok_or_else(|| BooksError::from("Month must be YYYY-MM."))?;
+    if kind == crate::core::business_rules::PayKind::Salary {
+        let mut existing_rows = Vec::new();
+        {
+            let mut stmt = books.conn().prepare(
+                "SELECT id, person_id, pay_kind, month FROM hr_payroll WHERE pay_kind IS NULL OR pay_kind != 'advance'",
+            )?;
+            let rows = stmt.query_map([], |row| {
+                let id: i64 = row.get(0)?;
+                let pid: i64 = row.get(1)?;
+                let pk: String = row.get::<_, Option<String>>(2)?.unwrap_or_default();
+                let mo: String = row.get::<_, Option<String>>(3)?.unwrap_or_default();
+                let (m, y) = parse_month_parts(&mo).unwrap_or((0, 0));
+                Ok(SalaryPeriodRow {
+                    id: Some(id.to_string()),
+                    employee_id: Some(pid.to_string()),
+                    employee_name: String::new(),
+                    pay_kind: Some(pk),
+                    period_month: m,
+                    period_year: y,
+                })
+            })?;
+            for row in rows {
+                existing_rows.push(row?);
+            }
+        }
+        let input = SalaryPeriodRow {
+            id: payload.id.map(|id| id.to_string()),
+            employee_id: Some(payload.person_id.to_string()),
+            employee_name: person_name.clone(),
+            pay_kind: Some(kind.as_str().into()),
+            period_month,
+            period_year,
+        };
+        if salary_period_taken(&existing_rows, &input) {
             return Err(BooksError::from(
                 "Payroll for that person already exists in this month.",
             ));
         }
     }
+    let salary_rupees = if payload.salary_rupees > 0.0 {
+        finite(payload.salary_rupees)
+    } else {
+        person_salary
+    };
+    if kind == crate::core::business_rules::PayKind::Salary
+        && active.eq_ignore_ascii_case("Yes")
+        && salary_rupees <= 0.0
+    {
+        return Err(BooksError::from("Salary is required when a person is Active."));
+    }
+    let pf_employee = finite(payload.pf_employee);
+    let pf_company = finite(payload.pf_company);
+    let tds = finite(payload.tds);
+    let recovery = finite(payload.recovery_rupees);
+    let slip = calc_salary_slip(
+        kind,
+        rupees_to_paise(salary_rupees),
+        rupees_to_paise(pf_employee),
+        rupees_to_paise(pf_company),
+        rupees_to_paise(tds),
+        rupees_to_paise(recovery),
+        rupees_to_paise(finite(payload.total_paid)),
+    );
+    let total_paid = paise_to_rupees(slip.net_paise);
+    let net = paise_to_rupees(slip.net_paise);
+    let existing_number = if let Some(id) = payload.id {
+        books
+            .conn()
+            .query_row(
+                "SELECT COALESCE(salary_number,'') FROM hr_payroll WHERE id = ?1",
+                params![id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
+    let requested = trim(&payload.salary_number);
+    let salary_number = if !existing_number.is_empty() {
+        keep_posted_pay_number(&existing_number, &requested)
+    } else if requested.is_empty() {
+        next_salary_number(&list_salary_numbers(books.conn())?)
+    } else {
+        requested
+    };
     let id = if let Some(existing) = payload.id {
         let n = books.conn().execute(
             "UPDATE hr_payroll SET person_id = ?1, month = ?2, pf_employee = ?3, pf_company = ?4,
-             tds = ?5, total_paid = ?6 WHERE id = ?7",
+             tds = ?5, total_paid = ?6, salary_number = ?7, pay_kind = ?8, salary_rupees = ?9,
+             recovery_rupees = ?10, net_rupees = ?11, is_dirty = 1 WHERE id = ?12",
             params![
                 payload.person_id,
                 month,
@@ -666,6 +1167,11 @@ pub fn save_hr_payroll(books: &LocalBooks, payload: PayrollRow) -> Result<Payrol
                 pf_company,
                 tds,
                 total_paid,
+                salary_number,
+                kind.as_str(),
+                salary_rupees,
+                paise_to_rupees(slip.recovery_paise),
+                net,
                 existing
             ],
         )?;
@@ -675,27 +1181,29 @@ pub fn save_hr_payroll(books: &LocalBooks, payload: PayrollRow) -> Result<Payrol
         existing
     } else {
         books.conn().execute(
-            "INSERT INTO hr_payroll (person_id, month, pf_employee, pf_company, tds, total_paid)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO hr_payroll (person_id, month, pf_employee, pf_company, tds, total_paid,
+             salary_number, pay_kind, salary_rupees, recovery_rupees, net_rupees, is_dirty, hive_rev)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 1, 0)",
             params![
                 payload.person_id,
                 month,
                 pf_employee,
                 pf_company,
                 tds,
-                total_paid
+                total_paid,
+                salary_number,
+                kind.as_str(),
+                salary_rupees,
+                paise_to_rupees(slip.recovery_paise),
+                net
             ],
         )?;
         books.conn().last_insert_rowid()
     };
+    let sql = format!("{PAYROLL_SELECT} WHERE p.id = ?1");
     books
         .conn()
-        .query_row(
-            "SELECT p.id, p.person_id, h.name, p.month, p.pf_employee, p.pf_company, p.tds, p.total_paid
-             FROM hr_payroll p JOIN hr_people h ON h.id = p.person_id WHERE p.id = ?1",
-            params![id],
-            payroll_from_row,
-        )
+        .query_row(&sql, params![id], payroll_from_row)
         .map_err(Into::into)
 }
 
@@ -751,7 +1259,7 @@ pub fn save_inventory(books: &LocalBooks, payload: InventoryRow) -> Result<Inven
     touch_project(books.conn(), &project)?;
     let id = if let Some(existing) = payload.id {
         let n = books.conn().execute(
-            "UPDATE inventory SET item_name = ?1, type = ?2, size = ?3, quantity = ?4, cost = ?5, project = ?6 WHERE id = ?7",
+            "UPDATE inventory SET item_name = ?1, type = ?2, size = ?3, quantity = ?4, cost = ?5, project = ?6, is_dirty = 1 WHERE id = ?7",
             params![item_name, item_type, size, quantity, cost, project, existing],
         )?;
         if n == 0 {
@@ -760,7 +1268,7 @@ pub fn save_inventory(books: &LocalBooks, payload: InventoryRow) -> Result<Inven
         existing
     } else {
         books.conn().execute(
-            "INSERT INTO inventory (item_name, type, size, quantity, cost, project) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO inventory (item_name, type, size, quantity, cost, project, is_dirty) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1)",
             params![item_name, item_type, size, quantity, cost, project],
         )?;
         books.conn().last_insert_rowid()
@@ -829,7 +1337,7 @@ pub fn save_logistics(books: &LocalBooks, payload: LogisticsRow) -> Result<Logis
     touch_project(books.conn(), &project)?;
     let id = if let Some(existing) = payload.id {
         let n = books.conn().execute(
-            "UPDATE logistics SET project = ?1, vehicle_number = ?2, invoice_number = ?3, start_date = ?4, reach_date = ?5 WHERE id = ?6",
+            "UPDATE logistics SET project = ?1, vehicle_number = ?2, invoice_number = ?3, start_date = ?4, reach_date = ?5, is_dirty = 1 WHERE id = ?6",
             params![project, vehicle_number, invoice_number, start_date, reach_date, existing],
         )?;
         if n == 0 {
@@ -838,8 +1346,8 @@ pub fn save_logistics(books: &LocalBooks, payload: LogisticsRow) -> Result<Logis
         existing
     } else {
         books.conn().execute(
-            "INSERT INTO logistics (project, vehicle_number, invoice_number, start_date, reach_date)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
+            "INSERT INTO logistics (project, vehicle_number, invoice_number, start_date, reach_date, is_dirty)
+             VALUES (?1, ?2, ?3, ?4, ?5, 1)",
             params![project, vehicle_number, invoice_number, start_date, reach_date],
         )?;
         books.conn().last_insert_rowid()
@@ -919,7 +1427,7 @@ pub fn save_document(books: &LocalBooks, payload: DocumentRow) -> Result<Documen
     let stored_name = if name.is_empty() { path.clone() } else { name };
     let id = if let Some(existing) = payload.id {
         let n = books.conn().execute(
-            "UPDATE documents SET name = ?1, path = ?2, linked_type = ?3, linked_id = ?4 WHERE id = ?5",
+            "UPDATE documents SET name = ?1, path = ?2, linked_type = ?3, linked_id = ?4, is_dirty = 1 WHERE id = ?5",
             params![stored_name, path, linked_type, linked_id, existing],
         )?;
         if n == 0 {
@@ -928,8 +1436,8 @@ pub fn save_document(books: &LocalBooks, payload: DocumentRow) -> Result<Documen
         existing
     } else {
         books.conn().execute(
-            "INSERT INTO documents (name, path, linked_type, linked_id, created_at)
-             VALUES (?1, ?2, ?3, ?4, datetime('now'))",
+            "INSERT INTO documents (name, path, linked_type, linked_id, created_at, is_dirty)
+             VALUES (?1, ?2, ?3, ?4, datetime('now'), 1)",
             params![stored_name, path, linked_type, linked_id],
         )?;
         books.conn().last_insert_rowid()
@@ -1151,6 +1659,7 @@ mod tests {
     fn item(desc: &str, qty: f64, rate: f64, gst: f64) -> PoItemIn {
         PoItemIn {
             id: None,
+            item_name: String::new(),
             description: desc.into(),
             qty,
             rate,
@@ -1241,12 +1750,49 @@ mod tests {
                 po_type: "simple".into(),
                 total_value: 250.5,
                 items: vec![item("ignored", 9.0, 9.0, 18.0)],
+                ..Default::default()
             },
         )
         .unwrap();
         assert_eq!(saved.po_type, "simple");
         assert_eq!(saved.total_value, 250.5);
         assert!(saved.items.is_empty());
+        assert!(saved.is_dirty);
+        assert_eq!(saved.po_number, "P-9");
+    }
+
+    #[test]
+    fn blank_purchase_allocates_pur_and_pay_classifies() {
+        let mut books = open_memory().unwrap();
+        let bill = save_purchase_po(
+            &mut books,
+            PurchasePoSave {
+                project: "CUST_01".into(),
+                vendor: "VEND_02".into(),
+                po_number: "".into(),
+                po_type: "simple".into(),
+                total_value: 100.0,
+                goods_received: false,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(bill.po_number, "PUR-0001");
+        let pay = save_purchase_payment(
+            &mut books,
+            PurchasePaymentSave {
+                po_number: bill.po_number.clone(),
+                amount_rupees: 40.0,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(pay.pay_number, "PAY-0001");
+        assert_eq!(pay.pay_class, "advance");
+        assert_eq!(pay.alloc_method, "advance");
+        let billed = get_purchase_po(&books, bill.id).unwrap();
+        assert_eq!(billed.paid_rupees, 40.0);
+        assert_eq!(billed.pay_status, "Partially Paid");
     }
 
     #[test]
@@ -1259,6 +1805,7 @@ mod tests {
                 name: "Asha".into(),
                 role: "Engineer".into(),
                 salary: 50000.0,
+                ..Default::default()
             },
         )
         .unwrap();
@@ -1274,10 +1821,12 @@ mod tests {
                 pf_total: 0.0,
                 tds: 500.0,
                 total_paid: 47000.0,
+                ..Default::default()
             },
         )
         .unwrap();
         assert_eq!(pay.pf_total, 3600.0);
+        assert_eq!(pay.salary_number, "SAL-0001");
         let err = save_hr_payroll(
             &books,
             PayrollRow {
@@ -1290,6 +1839,7 @@ mod tests {
                 pf_total: 0.0,
                 tds: 0.0,
                 total_paid: 0.0,
+                ..Default::default()
             },
         )
         .unwrap_err();
@@ -1318,6 +1868,7 @@ mod tests {
                 name: "Asha".into(),
                 role: "".into(),
                 salary: 1.0,
+                ..Default::default()
             },
         )
         .unwrap();
@@ -1456,6 +2007,7 @@ mod tests {
                 name: "".into(),
                 role: "".into(),
                 salary: 1.0,
+                ..Default::default()
             },
         )
         .unwrap_err();

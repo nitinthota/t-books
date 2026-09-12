@@ -1,8 +1,10 @@
-import { lazy, memo, Suspense, useCallback, useState } from "react";
+import { lazy, memo, Suspense, useCallback, useEffect, useState } from "react";
 import { formatRupees } from "@/lib/t-books/business_rules";
 import { canOpenAccess } from "@/lib/t-books/rbac";
 import { useBooks } from "@/lib/t-books/store";
-import type { NavId, SearchHit } from "@/lib/t-books/types";
+import type { DirtyKey, NavId, SearchHit } from "@/lib/t-books/types";
+import { invokeCommand, isTauriRuntime } from "@/lib/t-books/platform";
+import { listDirtyKeys } from "@/lib/t-books/vouchers";
 import { DesktopLayout } from "./desktop-layout";
 import { ScreenSkeleton } from "./skeleton";
 import { UnsavedProvider, useUnsaved } from "./unsaved-guard";
@@ -13,6 +15,7 @@ const ProjectsScreen = lazy(() => import("./projects-screen"));
 const SalesScreen = lazy(() => import("./sales-screen"));
 const PurchaseScreen = lazy(() => import("./purchase-screen"));
 const HrScreen = lazy(() => import("./hr-screen"));
+const TrialScreen = lazy(() => import("./trial-screen"));
 const InventoryScreen = lazy(() => import("./inventory-screen"));
 const LogisticsScreen = lazy(() => import("./logistics-screen"));
 const DocumentsScreen = lazy(() => import("./documents-screen"));
@@ -77,6 +80,8 @@ function BoardShellInner() {
               <PurchaseScreen onBack={() => go("board")} focusId={focusId} />
             ) : active === "hr" ? (
               <HrScreen onBack={() => go("board")} />
+            ) : active === "trial" ? (
+              <TrialScreen onBack={() => go("board")} />
             ) : active === "inventory" ? (
               <InventoryScreen onBack={() => go("board")} focusId={focusId} />
             ) : active === "logistics" ? (
@@ -101,44 +106,61 @@ const BoardBody = memo(function BoardBody({ onOpenVouchers }: { onOpenVouchers: 
   const count = summary?.count ?? 0;
   const dirty = summary?.dirty ?? 0;
   const remaining = summary?.remainingTotal ?? 0;
+  const [keys, setKeys] = useState<DirtyKey[]>([]);
 
-  if (count === 0) {
-    return (
-      <div className="mt-6 max-w-xl">
-        {lastError ? null : (
-          <p className="text-sm text-ink-muted">
-            No vouchers on this PC yet. Refresh pulls the register. Sales, purchase, HR, inventory,
-            logistics, and documents stay here.
-          </p>
-        )}
-      </div>
-    );
-  }
+  useEffect(() => {
+    void (async () => {
+      try {
+        const list = isTauriRuntime()
+          ? await invokeCommand<DirtyKey[]>("get_dirty_keys")
+          : listDirtyKeys();
+        setKeys(list);
+      } catch {
+        /* board still shows last summary */
+      }
+    })();
+  }, [summary, lastError]);
 
   return (
     <div className="mt-8">
-      <p className="text-xs text-ink-subtle">
-        {summary?.lastSynced ? `Last refreshed ${summary.lastSynced}` : "Never refreshed on this PC."}
-      </p>
-      <button
-        type="button"
-        onClick={onOpenVouchers}
-        className="pressable mt-4 w-full rounded-lg bg-paper-raised p-5 text-left ring-1 ring-line"
-      >
-        <div className="grid grid-cols-3 gap-4">
-          <BoardFigure label="Vouchers" value={String(count)} />
-          <BoardFigure label="Still to pay" value={formatRupees(remaining)} emphasis />
-          <BoardFigure
-            label="Unsynced"
-            value={String(dirty)}
-            gold={dirty > 0}
-          />
+      {lastError ? (
+        <p className="mb-4 text-sm text-gold">Refresh failed. Previous figures on this PC are kept.</p>
+      ) : null}
+      {count === 0 && !lastError ? (
+        <p className="text-sm text-ink-muted">
+          No vouchers on this PC yet. Refresh pulls the register. Sales, purchase, HR, inventory,
+          logistics, and documents stay here.
+        </p>
+      ) : (
+        <>
+          <p className="text-xs text-ink-subtle">
+            {summary?.lastSynced ? `Last refreshed ${summary.lastSynced}` : "Never refreshed on this PC."}
+          </p>
+          <button
+            type="button"
+            onClick={onOpenVouchers}
+            className="pressable mt-4 w-full rounded-lg bg-paper-raised p-5 text-left ring-1 ring-line"
+          >
+            <div className="grid grid-cols-3 gap-4">
+              <BoardFigure label="Vouchers" value={String(count)} />
+              <BoardFigure label="Still to pay" value={formatRupees(remaining)} emphasis />
+              <BoardFigure label="Unsynced" value={String(keys.length || dirty)} gold={(keys.length || dirty) > 0} />
+            </div>
+          </button>
+        </>
+      )}
+      {keys.length > 0 ? (
+        <div className="mt-6 rounded-lg bg-paper-raised p-4 ring-1 ring-line">
+          <p className="text-xs font-medium uppercase tracking-wide text-ink-subtle">Outbox</p>
+          <ul className="mt-2 max-h-40 overflow-auto font-mono text-sm">
+            {keys.map((k) => (
+              <li key={`${k.kind}-${k.key}`} className="py-1">
+                {k.kind} {k.key}
+              </li>
+            ))}
+          </ul>
         </div>
-      </button>
-      <p className="mt-4 text-sm text-ink-muted">
-        {summary?.pending ?? 0} pending · {summary?.partial ?? 0} partial · {summary?.full ?? 0} full
-        {(summary?.missingTax ?? 0) > 0 ? ` · ${summary?.missingTax} missing tax invoice` : ""}
-      </p>
+      ) : null}
     </div>
   );
 });

@@ -133,6 +133,7 @@ fn sales_po_round_trip_uses_calc_po() {
             gst: String::new(),
             items: vec![PoItemIn {
                 id: None,
+                item_name: String::new(),
                 description: "Line".into(),
                 qty: 2.0,
                 rate: 100.0,

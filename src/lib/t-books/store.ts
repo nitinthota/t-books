@@ -26,6 +26,7 @@ import type {
   AccessRow,
   AccessSnapshot,
   AuthInspect,
+  DirtyKey,
   RefreshOutcome,
   Session,
   VoucherSummary,
@@ -63,6 +64,7 @@ type BooksState = {
   refreshBusy: boolean;
   toast: string | null;
   conflictNumbers: number[] | null;
+  conflictKeys: DirtyKey[] | null;
   refreshVouchers: () => Promise<{ ok: true } | { ok: false; message: string } | { ok: "dirty" }>;
   forceRefreshVouchers: () => Promise<{ ok: true } | { ok: false; message: string }>;
   dismissConflict: () => void;
@@ -76,7 +78,7 @@ let onlineUnsub: (() => void) | null = null;
 
 function asRole(role: string): Session["role"] {
   if (role === "owner" || role === "admin" || role === "operator") return role;
-  return "operator";
+  throw new Error("Your role cannot open T Books.");
 }
 
 function applySnapshot(
@@ -105,6 +107,7 @@ export const useBooks = create<BooksState>((set, get) => ({
   refreshBusy: false,
   toast: null,
   conflictNumbers: null,
+  conflictKeys: null,
   start: async () => {
     if (!startOnce) {
       startOnce = (async () => {
@@ -306,7 +309,11 @@ export const useBooks = create<BooksState>((set, get) => ({
       const run = isTauriRuntime() ? platformRefreshVouchers : async () => localRefreshVouchers();
       const result: RefreshOutcome = await run();
       if (result.kind === "dirty") {
-        set({ refreshBusy: false, conflictNumbers: result.voucherNumbers });
+        set({
+          refreshBusy: false,
+          conflictNumbers: result.voucherNumbers,
+          conflictKeys: result.keys ?? result.voucherNumbers.map((n) => ({ kind: "voucher", key: String(n) })),
+        });
         return { ok: "dirty" as const };
       }
       await get().loadVoucherSummary();
@@ -321,11 +328,6 @@ export const useBooks = create<BooksState>((set, get) => ({
     } catch (err) {
       const message = invokeErrorMessage(err);
       set({ refreshBusy: false, lastError: message });
-      try {
-        await get().loadVoucherSummary();
-      } catch {
-        /* keep */
-      }
       return { ok: false as const, message };
     }
   },
@@ -338,7 +340,11 @@ export const useBooks = create<BooksState>((set, get) => ({
         : async () => localForceRefresh();
       const result: RefreshOutcome = await run();
       if (result.kind === "dirty") {
-        set({ refreshBusy: false, conflictNumbers: result.voucherNumbers });
+        set({
+          refreshBusy: false,
+          conflictNumbers: result.voucherNumbers,
+          conflictKeys: result.keys ?? result.voucherNumbers.map((n) => ({ kind: "voucher", key: String(n) })),
+        });
         return { ok: false as const, message: "Unsynced local changes are still on this PC." };
       }
       await get().loadVoucherSummary();
@@ -356,7 +362,7 @@ export const useBooks = create<BooksState>((set, get) => ({
       return { ok: false as const, message };
     }
   },
-  dismissConflict: () => set({ conflictNumbers: null, refreshBusy: false }),
+  dismissConflict: () => set({ conflictNumbers: null, conflictKeys: null, refreshBusy: false }),
   clearToast: () => set({ toast: null }),
   logout: () => {
     if (isTauriRuntime()) {

@@ -1,7 +1,27 @@
-import { calcPayroll, calcPo, calcPoItem, paiseToRupees } from "./business_rules";
+import {
+  allocMethodForPurchase,
+  calcPayroll,
+  calcPo,
+  calcPoItem,
+  calcSalarySlip,
+  classifyPurchasePayment,
+  keepPostedPayNumber,
+  nextPaymentNumber,
+  nextPurchaseNumber,
+  nextSalaryNumber,
+  normalizeAllocMethod,
+  normalizePayKind,
+  paiseToRupees,
+  purchasePayStatus,
+  rupeesToPaise,
+  salaryPeriodTaken,
+  taxInvoiceMissing,
+} from "./business_rules";
 import { all, exec, lastInsertId, withTransaction } from "./db";
 import { invokeCommand, isTauriRuntime } from "./platform";
+import { getTrialLocal, listFyLocal } from "./trial";
 import type {
+  CasOutcome,
   DocumentRow,
   HrPerson,
   InventoryRow,
@@ -9,11 +29,14 @@ import type {
   PayrollRow,
   PoItemIn,
   PoPreview,
+  PurchasePayment,
+  PurchasePaymentSave,
   PurchasePo,
   PurchasePoSave,
   SalesPo,
   SalesPoSave,
   SearchHit,
+  TrialBalance,
   VendorRef,
 } from "./types";
 
@@ -38,8 +61,8 @@ function trim(value: string | null | undefined): string {
   return (value ?? "").trim();
 }
 
-function finite(value: number): number {
-  return Number.isFinite(value) ? value : 0;
+function finite(value: number | null | undefined): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
 function requireText(value: string, field: string): string {
@@ -85,6 +108,7 @@ export function previewPo(items: PoItemIn[]): PoPreview {
     payment_term_unit: "days",
     amount_received_rupees: 0,
     items: items.map((item) => ({
+      item_name: item.itemName,
       description: item.description,
       qty: finite(item.qty),
       unit_rate_rupees: finite(item.rate),
@@ -93,14 +117,18 @@ export function previewPo(items: PoItemIn[]): PoPreview {
   });
   return {
     items: items.map((item, i) => {
-      const calc = summary.items[i] ?? calcPoItem({
-        description: item.description,
-        qty: finite(item.qty),
-        unit_rate_rupees: finite(item.rate),
-        gst_pct: finite(item.gstPct),
-      });
+      const calc =
+        summary.items[i] ??
+        calcPoItem({
+          item_name: item.itemName,
+          description: item.description,
+          qty: finite(item.qty),
+          unit_rate_rupees: finite(item.rate),
+          gst_pct: finite(item.gstPct),
+        });
       return {
         id: item.id,
+        itemName: item.itemName || calc.item_name,
         description: calc.description,
         qty: calc.qty,
         rate: item.rate,
@@ -116,10 +144,11 @@ export function previewPo(items: PoItemIn[]): PoPreview {
 
 function loadItems(table: string, poId: number): PoItemIn[] {
   return all<SqlRow>(
-    `SELECT id, description, qty, rate, gst_pct, amount FROM ${table} WHERE po_id = ? ORDER BY id`,
+    `SELECT id, COALESCE(item_name,'') AS item_name, description, qty, rate, gst_pct, amount FROM ${table} WHERE po_id = ? ORDER BY id`,
     [poId],
   ).map((row) => ({
     id: num(row, "id"),
+    itemName: text(row, "item_name"),
     description: text(row, "description"),
     qty: num(row, "qty"),
     rate: num(row, "rate"),
@@ -132,15 +161,17 @@ function replaceItems(table: string, poId: number, items: PoItemIn[]): void {
   exec(`DELETE FROM ${table} WHERE po_id = ?`, [poId]);
   for (const item of items) {
     const calc = calcPoItem({
+      item_name: item.itemName,
       description: item.description,
       qty: finite(item.qty),
       unit_rate_rupees: finite(item.rate),
       gst_pct: finite(item.gstPct),
     });
     exec(
-      `INSERT INTO ${table} (po_id, description, qty, rate, gst_pct, amount) VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO ${table} (po_id, item_name, description, qty, rate, gst_pct, amount) VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [
         poId,
+        (item.itemName ?? "").trim() || calc.item_name,
         calc.description,
         calc.qty,
         finite(item.rate),
@@ -238,10 +269,27 @@ function deleteSalesPoLocal(id: number): void {
   });
 }
 
+function paidForPo(poNumber: string): number {
+  const rows = all<SqlRow>(
+    "SELECT COALESCE(SUM(amount_rupees), 0) AS paid FROM purchase_payments WHERE po_number = ? COLLATE NOCASE",
+    [poNumber],
+  );
+  return num(rows[0] ?? {}, "paid");
+}
+
+function decoratePurchase(row: PurchasePo): PurchasePo {
+  const paid = paidForPo(row.poNumber);
+  return {
+    ...row,
+    paidRupees: paid,
+    payStatus: purchasePayStatus(rupeesToPaise(row.totalValue), rupeesToPaise(paid)),
+  };
+}
+
 function mapPurchase(row: SqlRow, withItems: boolean): PurchasePo {
   const id = num(row, "id");
   const rawType = text(row, "type").toLowerCase() === "simple" ? "simple" : "contract";
-  return {
+  return decoratePurchase({
     id,
     project: text(row, "project"),
     vendor: text(row, "vendor"),
@@ -250,20 +298,30 @@ function mapPurchase(row: SqlRow, withItems: boolean): PurchasePo {
     totalValue: num(row, "total_value"),
     createdAt: text(row, "created_at"),
     updatedAt: text(row, "updated_at"),
+    goodsReceived: num(row, "goods_received") !== 0,
+    taxInvoiceNo: text(row, "tax_invoice_no"),
+    taxInvoiceDate: text(row, "tax_invoice_date"),
+    isDirty: num(row, "is_dirty") !== 0,
+    paidRupees: 0,
+    payStatus: "",
     items: withItems ? loadItems("purchase_po_items", id) : [],
-  };
+  });
 }
 
 function listPurchasePoLocal(): PurchasePo[] {
   return all<SqlRow>(
-    `SELECT id, project, vendor, po_number, type, total_value, created_at, updated_at
+    `SELECT id, project, vendor, po_number, type, total_value, created_at, updated_at,
+            COALESCE(goods_received,0) AS goods_received, COALESCE(tax_invoice_no,'') AS tax_invoice_no,
+            COALESCE(tax_invoice_date,'') AS tax_invoice_date, COALESCE(is_dirty,0) AS is_dirty
      FROM purchase_po ORDER BY updated_at DESC, id DESC`,
   ).map((row) => mapPurchase(row, false));
 }
 
 function getPurchasePoLocal(id: number): PurchasePo {
   const rows = all<SqlRow>(
-    `SELECT id, project, vendor, po_number, type, total_value, created_at, updated_at
+    `SELECT id, project, vendor, po_number, type, total_value, created_at, updated_at,
+            COALESCE(goods_received,0) AS goods_received, COALESCE(tax_invoice_no,'') AS tax_invoice_no,
+            COALESCE(tax_invoice_date,'') AS tax_invoice_date, COALESCE(is_dirty,0) AS is_dirty
      FROM purchase_po WHERE id = ?`,
     [id],
   );
@@ -273,14 +331,34 @@ function getPurchasePoLocal(id: number): PurchasePo {
 
 function savePurchasePoLocal(payload: PurchasePoSave): PurchasePo {
   const project = requireText(payload.project, "Project");
-  const poNumber = requireText(payload.poNumber, "PO number");
   const vendor = requireText(payload.vendor, "Vendor");
   const poType = payload.type === "simple" ? "simple" : "contract";
+  const existingRows = payload.id
+    ? all<SqlRow>("SELECT po_number FROM purchase_po WHERE id = ?", [payload.id])
+    : [];
+  const existingNumber = existingRows[0] ? text(existingRows[0], "po_number") : "";
+  const requested = trim(payload.poNumber);
+  const listed = all<SqlRow>("SELECT po_number FROM purchase_po WHERE TRIM(po_number) != ''").map((r) =>
+    text(r, "po_number"),
+  );
+  const poNumber = existingNumber
+    ? keepPostedPayNumber(existingNumber, requested)
+    : requested || nextPurchaseNumber(listed);
+  const taken = all<SqlRow>(
+    "SELECT id FROM purchase_po WHERE po_number = ? COLLATE NOCASE LIMIT 1",
+    [poNumber],
+  );
+  if (taken[0] && num(taken[0], "id") !== (payload.id ?? 0)) {
+    throw new Error("A purchase bill with this number already exists.");
+  }
   if (poTaken("purchase_po", project, poNumber, payload.id)) {
     throw new Error("A purchase PO with this number already exists on this project.");
   }
   const items = poType === "simple" ? [] : (payload.items ?? []);
   const total = poType === "simple" ? finite(payload.totalValue) : previewPo(items).grandTotal;
+  const goods = payload.goodsReceived ? 1 : 0;
+  const taxNo = trim(payload.taxInvoiceNo ?? "");
+  const taxDate = trim(payload.taxInvoiceDate ?? "");
   let id = payload.id ?? 0;
   try {
     withTransaction(() => {
@@ -289,14 +367,16 @@ function savePurchasePoLocal(payload: PurchasePoSave): PurchasePo {
       if (id) {
         exec(
           `UPDATE purchase_po SET project = ?, vendor = ?, po_number = ?, type = ?, total_value = ?,
+           goods_received = ?, tax_invoice_no = ?, tax_invoice_date = ?, is_dirty = 1,
            updated_at = datetime('now') WHERE id = ?`,
-          [project, vendor, poNumber, poType, total, id],
+          [project, vendor, poNumber, poType, total, goods, taxNo, taxDate, id],
         );
       } else {
         exec(
-          `INSERT INTO purchase_po (project, vendor, po_number, type, total_value, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
-          [project, vendor, poNumber, poType, total],
+          `INSERT INTO purchase_po (project, vendor, po_number, type, total_value, goods_received,
+           tax_invoice_no, tax_invoice_date, is_dirty, hive_rev, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 0, datetime('now'), datetime('now'))`,
+          [project, vendor, poNumber, poType, total, goods, taxNo, taxDate],
         );
         id = lastInsertId();
       }
@@ -304,7 +384,7 @@ function savePurchasePoLocal(payload: PurchasePoSave): PurchasePo {
     });
   } catch (err) {
     if (isUnique(err)) {
-      throw new Error("A purchase PO with this number already exists on this project.");
+      throw new Error("A purchase bill with this number already exists.");
     }
     throw err;
   }
@@ -317,35 +397,160 @@ function deletePurchasePoLocal(id: number): void {
   });
 }
 
+function mapPayment(row: SqlRow): PurchasePayment {
+  return {
+    id: num(row, "id"),
+    payNumber: text(row, "pay_number"),
+    poNumber: text(row, "po_number"),
+    vendor: text(row, "vendor"),
+    project: text(row, "project"),
+    amountRupees: num(row, "amount_rupees"),
+    allocMethod: text(row, "alloc_method"),
+    payClass: text(row, "pay_class"),
+    missingTaxInvoice: num(row, "missing_tax_invoice") !== 0,
+    payDate: text(row, "pay_date"),
+    remarks: text(row, "remarks"),
+    isDirty: num(row, "is_dirty") !== 0,
+  };
+}
+
+function listPurchasePaymentsLocal(poNumber?: string | null): PurchasePayment[] {
+  const po = trim(poNumber ?? "");
+  const sql = po
+    ? `SELECT id, pay_number, po_number, vendor, project, amount_rupees, alloc_method, pay_class,
+              COALESCE(missing_tax_invoice,0) AS missing_tax_invoice, COALESCE(pay_date,'') AS pay_date,
+              COALESCE(remarks,'') AS remarks, COALESCE(is_dirty,0) AS is_dirty
+       FROM purchase_payments WHERE po_number = ? COLLATE NOCASE ORDER BY pay_number COLLATE NOCASE, id`
+    : `SELECT id, pay_number, po_number, vendor, project, amount_rupees, alloc_method, pay_class,
+              COALESCE(missing_tax_invoice,0) AS missing_tax_invoice, COALESCE(pay_date,'') AS pay_date,
+              COALESCE(remarks,'') AS remarks, COALESCE(is_dirty,0) AS is_dirty
+       FROM purchase_payments ORDER BY pay_number COLLATE NOCASE, id`;
+  return all<SqlRow>(sql, po ? [po] : []).map(mapPayment);
+}
+
+function savePurchasePaymentLocal(payload: PurchasePaymentSave): PurchasePayment {
+  const poNumber = requireText(payload.poNumber, "Purchase number");
+  const amount = finite(payload.amountRupees);
+  if (amount <= 0) throw new Error("Payment amount must be greater than zero.");
+  const bills = all<SqlRow>(
+    `SELECT vendor, project, total_value, COALESCE(goods_received,0) AS goods_received,
+            COALESCE(tax_invoice_no,'') AS tax_invoice_no, COALESCE(tax_invoice_date,'') AS tax_invoice_date
+     FROM purchase_po WHERE po_number = ? COLLATE NOCASE LIMIT 1`,
+    [poNumber],
+  );
+  if (!bills[0]) throw new Error("That purchase bill was not found on this PC.");
+  const bill = bills[0];
+  const vendor = trim(payload.vendor) || text(bill, "vendor");
+  const project = text(bill, "project");
+  const existing = payload.id
+    ? all<SqlRow>("SELECT pay_number FROM purchase_payments WHERE id = ?", [payload.id])
+    : [];
+  const existingNumber = existing[0] ? text(existing[0], "pay_number") : "";
+  const listed = all<SqlRow>("SELECT pay_number FROM purchase_payments WHERE TRIM(pay_number) != ''").map((r) =>
+    text(r, "pay_number"),
+  );
+  const requested = trim(payload.payNumber);
+  const payNumber = existingNumber
+    ? keepPostedPayNumber(existingNumber, requested)
+    : requested || nextPaymentNumber(listed, poNumber);
+  const skipId = payload.id ?? -1;
+  const beforeRows = all<SqlRow>(
+    "SELECT COALESCE(SUM(amount_rupees),0) AS paid FROM purchase_payments WHERE po_number = ? COLLATE NOCASE AND id != ?",
+    [poNumber, skipId],
+  );
+  const paidBefore = num(beforeRows[0] ?? {}, "paid");
+  const goods = num(bill, "goods_received") !== 0;
+  const missingTax = taxInvoiceMissing(text(bill, "tax_invoice_no"), text(bill, "tax_invoice_date"));
+  const classified = classifyPurchasePayment({
+    goodsReceived: goods,
+    taxInvoiceMissing: missingTax,
+    grandPaise: rupeesToPaise(num(bill, "total_value")),
+    paidBeforePaise: rupeesToPaise(paidBefore),
+    thisPaise: rupeesToPaise(amount),
+  });
+  const alloc = trim(payload.allocMethod)
+    ? normalizeAllocMethod(payload.allocMethod)
+    : allocMethodForPurchase(goods);
+  let id = payload.id ?? 0;
+  withTransaction(() => {
+    if (id) {
+      exec(
+        `UPDATE purchase_payments SET pay_number = ?, po_number = ?, vendor = ?, project = ?,
+         amount_rupees = ?, alloc_method = ?, pay_class = ?, missing_tax_invoice = ?,
+         pay_date = ?, remarks = ?, is_dirty = 1, updated_at = datetime('now') WHERE id = ?`,
+        [payNumber, poNumber, vendor, project, amount, alloc, classified.payClass, classified.missingTaxInvoice ? 1 : 0, trim(payload.payDate), trim(payload.remarks), id],
+      );
+    } else {
+      exec(
+        `INSERT INTO purchase_payments (pay_number, po_number, vendor, project, amount_rupees,
+         alloc_method, pay_class, missing_tax_invoice, pay_date, remarks, is_dirty, hive_rev,
+         created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, datetime('now'), datetime('now'))`,
+        [payNumber, poNumber, vendor, project, amount, alloc, classified.payClass, classified.missingTaxInvoice ? 1 : 0, trim(payload.payDate), trim(payload.remarks)],
+      );
+      id = lastInsertId();
+    }
+  });
+  const rows = all<SqlRow>(
+    `SELECT id, pay_number, po_number, vendor, project, amount_rupees, alloc_method, pay_class,
+            COALESCE(missing_tax_invoice,0) AS missing_tax_invoice, COALESCE(pay_date,'') AS pay_date,
+            COALESCE(remarks,'') AS remarks, COALESCE(is_dirty,0) AS is_dirty
+     FROM purchase_payments WHERE id = ?`,
+    [id],
+  );
+  if (!rows[0]) throw new Error("That payment was not found on this PC.");
+  return mapPayment(rows[0]);
+}
+
+function deletePurchasePaymentLocal(id: number): void {
+  withTransaction(() => {
+    exec("DELETE FROM purchase_payments WHERE id = ?", [id]);
+  });
+}
+
 function mapPerson(row: SqlRow): HrPerson {
   return {
     id: num(row, "id"),
     name: text(row, "name"),
     role: text(row, "role"),
     salary: num(row, "salary"),
+    active: text(row, "active") || "Yes",
   };
 }
 
 function listHrPeopleLocal(): HrPerson[] {
-  return all<SqlRow>("SELECT id, name, role, salary FROM hr_people ORDER BY name COLLATE NOCASE, id").map(
-    mapPerson,
-  );
+  return all<SqlRow>(
+    "SELECT id, name, role, salary, COALESCE(active,'Yes') AS active FROM hr_people ORDER BY name COLLATE NOCASE, id",
+  ).map(mapPerson);
 }
 
 function saveHrPersonLocal(payload: HrPerson): HrPerson {
   const name = requireText(payload.name, "Name");
   const role = trim(payload.role);
   const salary = finite(payload.salary);
+  const active = ["no", "n", "false", "0"].includes(trim(payload.active ?? "Yes").toLowerCase())
+    ? "No"
+    : "Yes";
+  if (active === "Yes" && salary <= 0) {
+    throw new Error("Salary is required when a person is Active.");
+  }
   let id = payload.id ?? 0;
   withTransaction(() => {
     if (id) {
-      exec("UPDATE hr_people SET name = ?, role = ?, salary = ? WHERE id = ?", [name, role, salary, id]);
+      exec("UPDATE hr_people SET name = ?, role = ?, salary = ?, active = ? WHERE id = ?", [
+        name, role, salary, active, id,
+      ]);
     } else {
-      exec("INSERT INTO hr_people (name, role, salary) VALUES (?, ?, ?)", [name, role, salary]);
+      exec("INSERT INTO hr_people (name, role, salary, active) VALUES (?, ?, ?, ?)", [
+        name, role, salary, active,
+      ]);
       id = lastInsertId();
     }
   });
-  const rows = all<SqlRow>("SELECT id, name, role, salary FROM hr_people WHERE id = ?", [id]);
+  const rows = all<SqlRow>(
+    "SELECT id, name, role, salary, COALESCE(active,'Yes') AS active FROM hr_people WHERE id = ?",
+    [id],
+  );
   if (!rows[0]) throw new Error("That person was not found on this PC.");
   return mapPerson(rows[0]);
 }
@@ -360,6 +565,18 @@ function mapPayroll(row: SqlRow): PayrollRow {
   const pfEmployee = num(row, "pf_employee");
   const pfCompany = num(row, "pf_company");
   const tds = num(row, "tds");
+  const payKind = text(row, "pay_kind") || "salary";
+  const salaryRupees = num(row, "salary_rupees") || num(row, "salary");
+  const recoveryRupees = num(row, "recovery_rupees");
+  const slip = calcSalarySlip({
+    kind: payKind,
+    salary_paise: rupeesToPaise(salaryRupees),
+    pf_employee_paise: rupeesToPaise(pfEmployee),
+    pf_company_paise: rupeesToPaise(pfCompany),
+    tds_paise: rupeesToPaise(tds),
+    recovery_paise: rupeesToPaise(recoveryRupees),
+    amount_paise: rupeesToPaise(num(row, "total_paid")),
+  });
   const calc = calcPayroll({
     pf_company_rupees: pfCompany,
     pf_employee_rupees: pfEmployee,
@@ -374,57 +591,153 @@ function mapPayroll(row: SqlRow): PayrollRow {
     pfCompany,
     pfTotal: paiseToRupees(calc.pf_total_paise),
     tds,
-    totalPaid: num(row, "total_paid"),
+    totalPaid: paiseToRupees(slip.net_paise),
+    salaryNumber: text(row, "salary_number"),
+    payKind,
+    salaryRupees,
+    recoveryRupees: paiseToRupees(slip.recovery_paise),
+    netRupees: paiseToRupees(slip.net_paise),
+    isDirty: num(row, "is_dirty") !== 0,
   };
 }
 
+const PAYROLL_SELECT = `SELECT p.id, p.person_id, h.name, p.month, p.pf_employee, p.pf_company, p.tds, p.total_paid,
+        h.salary, COALESCE(p.salary_number,'') AS salary_number, COALESCE(p.pay_kind,'salary') AS pay_kind,
+        COALESCE(p.salary_rupees,0) AS salary_rupees, COALESCE(p.recovery_rupees,0) AS recovery_rupees,
+        COALESCE(p.is_dirty,0) AS is_dirty
+ FROM hr_payroll p JOIN hr_people h ON h.id = p.person_id`;
+
 function listHrPayrollLocal(): PayrollRow[] {
-  return all<SqlRow>(
-    `SELECT p.id, p.person_id, h.name, p.month, p.pf_employee, p.pf_company, p.tds, p.total_paid
-     FROM hr_payroll p JOIN hr_people h ON h.id = p.person_id
-     ORDER BY p.month DESC, h.name COLLATE NOCASE`,
-  ).map(mapPayroll);
+  return all<SqlRow>(`${PAYROLL_SELECT} ORDER BY p.month DESC, h.name COLLATE NOCASE`).map(mapPayroll);
+}
+
+function parseMonthParts(month: string): { month: number; year: number } | null {
+  if (!validMonth(month)) return null;
+  const year = Number(month.slice(0, 4));
+  const m = Number(month.slice(5, 7));
+  if (!Number.isFinite(year) || !Number.isFinite(m)) return null;
+  return { month: m, year };
 }
 
 function saveHrPayrollLocal(payload: PayrollRow): PayrollRow {
   if (!payload.personId) throw new Error("Person is required.");
   const month = trim(payload.month);
   if (!validMonth(month)) throw new Error("Month must be YYYY-MM.");
-  const people = all<SqlRow>("SELECT id FROM hr_people WHERE id = ?", [payload.personId]);
+  const people = all<SqlRow>(
+    "SELECT id, name, salary, COALESCE(active,'Yes') AS active FROM hr_people WHERE id = ?",
+    [payload.personId],
+  );
   if (!people[0]) throw new Error("That person was not found on this PC.");
-  const taken = all<SqlRow>("SELECT id FROM hr_payroll WHERE person_id = ? AND month = ? LIMIT 1", [
-    payload.personId,
-    month,
-  ]);
-  if (taken[0] && num(taken[0], "id") !== (payload.id ?? 0)) {
-    throw new Error("Payroll for that person already exists in this month.");
+  const personName = text(people[0], "name");
+  const personSalary = num(people[0], "salary");
+  const active = text(people[0], "active") || "Yes";
+  const kind = normalizePayKind(payload.payKind);
+  const parts = parseMonthParts(month);
+  if (!parts) throw new Error("Month must be YYYY-MM.");
+  if (kind === "salary") {
+    const existing = all<SqlRow>(
+      "SELECT id, person_id, pay_kind, month FROM hr_payroll WHERE pay_kind IS NULL OR pay_kind != 'advance'",
+    ).map((row) => {
+      const parsed = parseMonthParts(text(row, "month"));
+      return {
+        id: String(num(row, "id")),
+        employee_id: String(num(row, "person_id")),
+        employee_name: "",
+        pay_kind: text(row, "pay_kind") || "salary",
+        period_month: parsed?.month ?? 0,
+        period_year: parsed?.year ?? 0,
+      };
+    });
+    if (
+      salaryPeriodTaken(existing, {
+        id: payload.id ? String(payload.id) : undefined,
+        employee_id: String(payload.personId),
+        employee_name: personName,
+        period_month: parts.month,
+        period_year: parts.year,
+      })
+    ) {
+      throw new Error("Payroll for that person already exists in this month.");
+    }
+  }
+  const salaryRupees = finite(payload.salaryRupees) > 0 ? finite(payload.salaryRupees) : personSalary;
+  if (kind === "salary" && active === "Yes" && salaryRupees <= 0) {
+    throw new Error("Salary is required when a person is Active.");
   }
   const pfEmployee = finite(payload.pfEmployee);
   const pfCompany = finite(payload.pfCompany);
   const tds = finite(payload.tds);
-  const totalPaid = finite(payload.totalPaid);
+  const recovery = finite(payload.recoveryRupees);
+  const slip = calcSalarySlip({
+    kind,
+    salary_paise: rupeesToPaise(salaryRupees),
+    pf_employee_paise: rupeesToPaise(pfEmployee),
+    pf_company_paise: rupeesToPaise(pfCompany),
+    tds_paise: rupeesToPaise(tds),
+    recovery_paise: rupeesToPaise(recovery),
+    amount_paise: rupeesToPaise(finite(payload.totalPaid)),
+  });
+  const totalPaid = paiseToRupees(slip.net_paise);
+  const net = paiseToRupees(slip.net_paise);
+  let existingNumber = "";
+  if (payload.id) {
+    const rows = all<SqlRow>("SELECT COALESCE(salary_number,'') AS salary_number FROM hr_payroll WHERE id = ?", [
+      payload.id,
+    ]);
+    existingNumber = rows[0] ? text(rows[0], "salary_number") : "";
+  }
+  const requested = trim(payload.salaryNumber);
+  const listed = all<SqlRow>(
+    "SELECT salary_number FROM hr_payroll WHERE TRIM(COALESCE(salary_number,'')) != ''",
+  ).map((row) => text(row, "salary_number"));
+  const salaryNumber = existingNumber
+    ? keepPostedPayNumber(existingNumber, requested)
+    : requested || nextSalaryNumber(listed);
   let id = payload.id ?? 0;
   withTransaction(() => {
     if (id) {
       exec(
-        `UPDATE hr_payroll SET person_id = ?, month = ?, pf_employee = ?, pf_company = ?, tds = ?, total_paid = ?
+        `UPDATE hr_payroll SET person_id = ?, month = ?, pf_employee = ?, pf_company = ?, tds = ?, total_paid = ?,
+         salary_number = ?, pay_kind = ?, salary_rupees = ?, recovery_rupees = ?, net_rupees = ?, is_dirty = 1
          WHERE id = ?`,
-        [payload.personId, month, pfEmployee, pfCompany, tds, totalPaid, id],
+        [
+          payload.personId,
+          month,
+          pfEmployee,
+          pfCompany,
+          tds,
+          totalPaid,
+          salaryNumber,
+          kind,
+          salaryRupees,
+          paiseToRupees(slip.recovery_paise),
+          net,
+          id,
+        ],
       );
     } else {
       exec(
-        `INSERT INTO hr_payroll (person_id, month, pf_employee, pf_company, tds, total_paid)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [payload.personId, month, pfEmployee, pfCompany, tds, totalPaid],
+        `INSERT INTO hr_payroll (person_id, month, pf_employee, pf_company, tds, total_paid,
+         salary_number, pay_kind, salary_rupees, recovery_rupees, net_rupees, is_dirty, hive_rev)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0)`,
+        [
+          payload.personId,
+          month,
+          pfEmployee,
+          pfCompany,
+          tds,
+          totalPaid,
+          salaryNumber,
+          kind,
+          salaryRupees,
+          paiseToRupees(slip.recovery_paise),
+          net,
+        ],
       );
       id = lastInsertId();
     }
   });
-  const rows = all<SqlRow>(
-    `SELECT p.id, p.person_id, h.name, p.month, p.pf_employee, p.pf_company, p.tds, p.total_paid
-     FROM hr_payroll p JOIN hr_people h ON h.id = p.person_id WHERE p.id = ?`,
-    [id],
-  );
+  const rows = all<SqlRow>(`${PAYROLL_SELECT} WHERE p.id = ?`, [id]);
   if (!rows[0]) throw new Error("That payroll row was not found on this PC.");
   return mapPayroll(rows[0]);
 }
@@ -475,12 +788,12 @@ function saveInventoryLocal(payload: InventoryRow): InventoryRow {
     touchProject(project);
     if (id) {
       exec(
-        `UPDATE inventory SET item_name = ?, type = ?, size = ?, quantity = ?, cost = ?, project = ? WHERE id = ?`,
+        `UPDATE inventory SET item_name = ?, type = ?, size = ?, quantity = ?, cost = ?, project = ?, is_dirty = 1 WHERE id = ?`,
         [itemName, itemType, size, quantity, cost, project, id],
       );
     } else {
       exec(
-        `INSERT INTO inventory (item_name, type, size, quantity, cost, project) VALUES (?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO inventory (item_name, type, size, quantity, cost, project, is_dirty) VALUES (?, ?, ?, ?, ?, ?, 1)`,
         [itemName, itemType, size, quantity, cost, project],
       );
       id = lastInsertId();
@@ -540,13 +853,13 @@ function saveLogisticsLocal(payload: LogisticsRow): LogisticsRow {
     touchProject(project);
     if (id) {
       exec(
-        `UPDATE logistics SET project = ?, vehicle_number = ?, invoice_number = ?, start_date = ?, reach_date = ? WHERE id = ?`,
+        `UPDATE logistics SET project = ?, vehicle_number = ?, invoice_number = ?, start_date = ?, reach_date = ?, is_dirty = 1 WHERE id = ?`,
         [project, vehicleNumber, invoiceNumber, startDate, reachDate, id],
       );
     } else {
       exec(
-        `INSERT INTO logistics (project, vehicle_number, invoice_number, start_date, reach_date)
-         VALUES (?, ?, ?, ?, ?)`,
+        `INSERT INTO logistics (project, vehicle_number, invoice_number, start_date, reach_date, is_dirty)
+         VALUES (?, ?, ?, ?, ?, 1)`,
         [project, vehicleNumber, invoiceNumber, startDate, reachDate],
       );
       id = lastInsertId();
@@ -608,13 +921,13 @@ function saveDocumentLocal(payload: DocumentRow): DocumentRow {
   withTransaction(() => {
     if (id) {
       exec(
-        `UPDATE documents SET name = ?, path = ?, linked_type = ?, linked_id = ? WHERE id = ?`,
+        `UPDATE documents SET name = ?, path = ?, linked_type = ?, linked_id = ?, is_dirty = 1 WHERE id = ?`,
         [storedName, path, linkedType, linkedId, id],
       );
     } else {
       exec(
-        `INSERT INTO documents (name, path, linked_type, linked_id, created_at)
-         VALUES (?, ?, ?, ?, datetime('now'))`,
+        `INSERT INTO documents (name, path, linked_type, linked_id, created_at, is_dirty)
+         VALUES (?, ?, ?, ?, datetime('now'), 1)`,
         [storedName, path, linkedType, linkedId],
       );
       id = lastInsertId();
@@ -738,6 +1051,32 @@ export async function savePurchasePo(payload: PurchasePoSave): Promise<PurchaseP
 }
 export async function deletePurchasePo(id: number): Promise<void> {
   return call("delete_purchase_po", () => deletePurchasePoLocal(id), { id });
+}
+export async function listPurchasePayments(poNumber?: string | null): Promise<PurchasePayment[]> {
+  return call("list_purchase_payments", () => listPurchasePaymentsLocal(poNumber), {
+    poNumber: poNumber ?? null,
+  });
+}
+export async function savePurchasePayment(payload: PurchasePaymentSave): Promise<PurchasePayment> {
+  return call("save_purchase_payment", () => savePurchasePaymentLocal(payload), { payload });
+}
+export async function deletePurchasePayment(id: number): Promise<void> {
+  return call("delete_purchase_payment", () => deletePurchasePaymentLocal(id), { id });
+}
+export async function submitOffice(kind: string, key: string): Promise<CasOutcome> {
+  return call(
+    "submit_office",
+    () => {
+      throw new Error("Google credentials not found at %LOCALAPPDATA%/T-Books/credentials.json.");
+    },
+    { kind, key },
+  );
+}
+export async function getTrial(fy?: string | null, asOf?: string | null): Promise<TrialBalance> {
+  return call("get_trial", () => getTrialLocal(fy, asOf), { fy: fy ?? null, asOf: asOf ?? null });
+}
+export async function listFy(): Promise<string[]> {
+  return call("list_fy", listFyLocal);
 }
 export async function listHrPeople(): Promise<HrPerson[]> {
   return call("list_hr_people", listHrPeopleLocal);

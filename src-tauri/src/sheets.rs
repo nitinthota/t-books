@@ -478,6 +478,62 @@ pub fn append_sheet_row(account: &ServiceAccount, tab: &str, cells: &[String]) -
     }
 }
 
+pub fn is_missing_tab_error(message: &str) -> bool {
+    let m = message.to_ascii_lowercase();
+    m.contains("unable to parse range")
+        || m.contains("unable to parse the range")
+        || m.contains("not found")
+        || (m.contains("tab named") && m.contains("exist"))
+}
+
+/// Owner bootstrap: create the tab with headers only. Never copies data rows.
+pub fn create_tab_with_headers(
+    account: &ServiceAccount,
+    tab: &str,
+    headers: &[String],
+) -> Result<()> {
+    let token = access_token(account)?;
+    let url = format!(
+        "https://sheets.googleapis.com/v4/spreadsheets/{}:batchUpdate",
+        account.spreadsheet_id
+    );
+    let body = serde_json::json!({
+        "requests": [{
+            "addSheet": {
+                "properties": { "title": tab }
+            }
+        }]
+    });
+    let auth = format!("Bearer {token}");
+    let response = agent()
+        .post(&url)
+        .set("Authorization", &auth)
+        .set("Accept", "application/json")
+        .set("Content-Type", "application/json")
+        .send_json(body);
+    match response {
+        Ok(_) => {}
+        Err(ureq::Error::Status(code, resp)) => {
+            let text = resp.into_string().unwrap_or_default();
+            let lower = text.to_ascii_lowercase();
+            if !(lower.contains("already exists") || lower.contains("duplicate")) {
+                return Err(BooksError::from(google_http_message(code, &text, tab)));
+            }
+        }
+        Err(_) => {
+            return Err(BooksError::from(
+                "Could not reach Google Sheets from this PC.",
+            ));
+        }
+    }
+    if headers.is_empty() {
+        return Ok(());
+    }
+    let last = (b'A' + (headers.len().saturating_sub(1) as u8).min(25)) as char;
+    let a1 = format!("A1:{last}1");
+    update_sheet_row(account, tab, &a1, headers)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -523,5 +579,16 @@ mod tests {
             "https://docs.google.com/spreadsheets/d/1J9ZuNL1uZ7DmqOGIZojuOCMeYp9VnC-SEow6YG86cgE/edit#gid=0",
         );
         assert_eq!(id, "1J9ZuNL1uZ7DmqOGIZojuOCMeYp9VnC-SEow6YG86cgE");
+    }
+
+    #[test]
+    fn missing_tab_error_is_detected() {
+        assert!(is_missing_tab_error(
+            "Unable to parse range: 'Voucher_Raw_Data'"
+        ));
+        assert!(is_missing_tab_error(
+            "Check the Sheet ID and that a tab named Access exists."
+        ));
+        assert!(!is_missing_tab_error("Could not reach Google Sheets from this PC."));
     }
 }

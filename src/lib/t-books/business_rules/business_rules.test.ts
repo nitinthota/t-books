@@ -1,20 +1,35 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { calcPayroll, calcPo, clampPct, paymentTermDays } from "./calc-po.ts";
-import { formatInr, paiseToRupees, rupeesToPaise } from "./money.ts";
+import { formatInr, formatQty, paiseToRupees, rupeesToPaise } from "./money.ts";
 import {
   addPayment,
   canAddPayment,
   emptyPayment,
+  isDottedChildSerial,
+  isDummySerial,
   occupiedPaymentCount,
   parseAmount,
   parseVoucherNumber,
+  shouldSkipSheetRow,
   summarizeVoucher,
   voucher1001Fixture,
   voucherTotals,
 } from "./payment.ts";
 import { paymentStatus, taxFlagFor } from "./status.ts";
 import { LOOPBOOK_LOGIC_VERSION } from "./index.ts";
+import { currentIndianFy, fyBounds, trialBalanced, trialClosing } from "./fy.ts";
+import {
+  calcSalarySlip,
+  keepPostedPayNumber,
+  linesBalance,
+  salaryPeriodTaken,
+  salaryVoucherLines,
+} from "./hr-payroll.ts";
+import { allocateVoucherSerial, nextPaymentNumber, nextPurchaseNumber, nextSalaryNumber } from "./alloc.ts";
+import { classifyPurchasePayment, isLegacyPayNumber } from "./purchase-status.ts";
+import { MemoryHive, hiveConflictMessage } from "../hive.ts";
+import { canMutate } from "./rbac.ts";
 
 test("loopbook logic version is v1", () => {
   assert.equal(LOOPBOOK_LOGIC_VERSION, "v1");
@@ -31,6 +46,7 @@ test("paise format", () => {
   assert.equal(paiseToRupees(21494), 214.94);
   assert.equal(formatInr(0), "₹0.00");
   assert.match(formatInr(10000000), /₹1,00,000/);
+  assert.equal(formatQty(Number.NaN), "—");
 });
 
 test("payment terms store as days", () => {
@@ -75,18 +91,29 @@ test("GST percent is clamped", () => {
   assert.equal(clampPct(-5), 0);
 });
 
-test("payroll PF total is company + employee", () => {
+test("payroll PF total is company + employee; salary optional", () => {
   const p = calcPayroll({ pf_company_rupees: 1800, pf_employee_rupees: 1800, tds_rupees: 500 });
   assert.equal(p.pf_total_paise, 360000);
   assert.equal(p.tds_paise, 50000);
+  assert.equal(p.salary_paise, 0);
+  const full = calcPayroll({
+    salary_rupees: 50000,
+    pf_company_rupees: 1800,
+    pf_employee_rupees: 1800,
+    tds_rupees: 500,
+  });
+  assert.equal(full.net_paise, 50000 * 100 - 1800 * 100 - 500 * 100);
+  assert.equal(full.ctc_paise, 50000 * 100 + 1800 * 100);
 });
 
-test("payment status", () => {
+test("payment status rounds each side to paise", () => {
   assert.equal(paymentStatus(100, 0, "INV"), "Pending Payment");
   assert.equal(paymentStatus(100, 40, "INV"), "Partial Payment");
   assert.equal(paymentStatus(100, 100, "INV"), "Full Payment");
   assert.equal(paymentStatus(100, 120, "INV"), "Advance Payment");
   assert.equal(paymentStatus(100, 0, ""), "Missing Tax Invoice");
+  assert.equal(paymentStatus(10.004, 10.006, "INV"), "Advance Payment");
+  assert.equal(paymentStatus(10.006, 10.004, "INV"), "Partial Payment");
 });
 
 test("tax flags", () => {
@@ -96,11 +123,18 @@ test("tax flags", () => {
   assert.equal(taxFlagFor("INV-1", ""), "ok");
 });
 
-test("column A is a strict integer", () => {
+test("column A is a strict integer; 20.1 is dotted child", () => {
   assert.equal(parseVoucherNumber("20"), 20);
   assert.equal(parseVoucherNumber("20.0"), 20);
   assert.equal(parseVoucherNumber("20.1"), null);
   assert.equal(parseVoucherNumber("VOUCHER_1001"), null);
+  assert.equal(isDottedChildSerial("20.1"), true);
+  assert.equal(isDottedChildSerial("20.0"), false);
+  assert.equal(isDummySerial("VOUCHER_1001"), true);
+  assert.equal(isDummySerial("PUR-0001"), false);
+  assert.equal(shouldSkipSheetRow("20", ""), true);
+  assert.equal(shouldSkipSheetRow("20.1", "VEND_02"), true);
+  assert.equal(shouldSkipSheetRow("20", "VEND_02"), false);
 });
 
 test("VOUCHER_1001 totals and status", () => {
@@ -147,3 +181,68 @@ test("blank and odd cells coerce", () => {
   assert.equal(parseAmount("-"), null);
   assert.equal(parseAmount("₹1,200.50"), 1200.5);
 });
+
+test("Indian FY is 1 Apr–31 Mar and trial balances", () => {
+  assert.equal(currentIndianFy(new Date("2026-04-01T00:00:00Z")), "2026-27");
+  assert.equal(currentIndianFy(new Date("2026-03-31T00:00:00Z")), "2025-26");
+  assert.deepEqual(fyBounds("2026-27"), { start: "2026-04-01", end: "2027-03-31" });
+  assert.equal(trialClosing(100, 40, 25), 115);
+  assert.equal(trialBalanced([{ debit_paise: 100, credit_paise: 0 }, { debit_paise: 0, credit_paise: 100 }]), true);
+});
+
+test("SAL-n slip balances; posted number is sacred", () => {
+  const slip = calcSalarySlip({
+    kind: "salary",
+    salary_paise: 5_000_000,
+    pf_employee_paise: 180_000,
+    pf_company_paise: 180_000,
+    tds_paise: 50_000,
+    recovery_paise: 200_000,
+  });
+  assert.equal(slip.net_paise, 5_000_000 - 180_000 - 50_000 - 200_000);
+  assert.equal(linesBalance(salaryVoucherLines(slip, "bank")), true);
+  assert.equal(keepPostedPayNumber("SAL-0001", "SAL-0009"), "SAL-0001");
+  assert.equal(
+    salaryPeriodTaken(
+      [{ employee_id: "p1", employee_name: "CUST_01", pay_kind: "salary", period_month: 9, period_year: 2026, id: "a" }],
+      { employee_id: "p1", employee_name: "CUST_01", period_month: 9, period_year: 2026, id: "b" },
+    ),
+    true,
+  );
+});
+
+test("PUR/PAY allocate from hive list; dummy rows never allocate", () => {
+  assert.equal(nextPurchaseNumber(["VOUCHER_1001", "PUR-0001", "PURC:0003"]), "PUR-0004");
+  assert.equal(nextPaymentNumber(["PAY-0001", "CUST_01"]), "PAY-0002");
+  assert.equal(nextSalaryNumber(["SAL-0001"]), "SAL-0002");
+  assert.equal(allocateVoucherSerial(["VCH-0004~id", "VOUCHER_1001"], "VCH"), "VCH-0005");
+  assert.equal(isLegacyPayNumber("PAY-0001"), false);
+  const { payClass } = classifyPurchasePayment({
+    goodsReceived: false,
+    taxInvoiceMissing: true,
+    grandPaise: 100_000,
+    paidBeforePaise: 0,
+    thisPaise: 10_000,
+  });
+  assert.equal(payClass, "advance");
+});
+
+test("viewer cannot mutate", () => {
+  assert.equal(canMutate("viewer"), false);
+  assert.equal(canMutate("operator"), true);
+  assert.equal(canMutate("owner"), true);
+});
+
+test("hive CAS is fp+rev and never silent overwrite", () => {
+  const hive = new MemoryHive();
+  hive.ensureTab("voucher", ["serial_no"]);
+  const first = hive.casRow("voucher", "20", "", 0, ["20"], "aaa");
+  assert.equal(first.kind, "ok");
+  const conflict = hive.casRow("voucher", "20", "stale", 0, ["20"], "bbb");
+  assert.equal(conflict.kind, "conflict");
+  if (conflict.kind === "conflict") {
+    assert.equal(conflict.message, hiveConflictMessage("20"));
+  }
+  assert.equal(hive.getRow("voucher", "20")?.fp, "aaa");
+});
+

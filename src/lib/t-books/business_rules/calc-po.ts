@@ -1,10 +1,12 @@
 /** calcPo — preview and save use this function only. Negatives are deductions. */
 
+import type { PayrollMoney } from "./hr-payroll.ts";
 import { rupeesToPaise } from "./money.ts";
 
 export type TermUnit = "days" | "months";
 
 export type PoItemInput = {
+  item_name?: string;
   description: string;
   qty: number;
   unit_rate_rupees: number;
@@ -12,6 +14,7 @@ export type PoItemInput = {
 };
 
 export type PoItemCalc = {
+  item_name: string;
   description: string;
   qty: number;
   unit_rate_paise: number;
@@ -48,6 +51,7 @@ export function calcPoItem(item: PoItemInput): PoItemCalc {
   const line = Math.round(qty * unit);
   const gstAmt = Math.round((line * gst) / 100);
   return {
+    item_name: (item.item_name ?? "").trim(),
     description: (item.description ?? "").trim(),
     qty,
     unit_rate_paise: unit,
@@ -81,16 +85,22 @@ export function calcPo(input: {
 }
 
 export function calcPayroll(input: {
+  salary_rupees?: number;
   pf_company_rupees: number;
   pf_employee_rupees: number;
   tds_rupees: number;
-}) {
+}): PayrollMoney {
+  const salary = rupeesToPaise(input.salary_rupees ?? 0);
   const company = rupeesToPaise(input.pf_company_rupees);
   const employee = rupeesToPaise(input.pf_employee_rupees);
+  const tds = rupeesToPaise(input.tds_rupees);
   return {
+    salary_paise: salary,
     pf_company_paise: company,
     pf_employee_paise: employee,
     pf_total_paise: company + employee,
-    tds_paise: rupeesToPaise(input.tds_rupees),
+    tds_paise: tds,
+    net_paise: salary - employee - tds,
+    ctc_paise: salary + company,
   };
 }

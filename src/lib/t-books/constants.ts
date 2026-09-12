@@ -27,7 +27,7 @@ export const OFFLINE_VOUCHER_REFRESH_ERROR = "This PC is offline. Cannot refresh
 export const REFRESH_SUCCESS_TOAST = "Data refreshed";
 
 export const MIN_PASSWORD_LENGTH = 8;
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 8;
 export const OFFLINE_SUBMIT_ERROR = "This PC is offline. Cannot submit to Google.";
 export const SUBMIT_SUCCESS_TOAST = "Submitted to Google.";
 

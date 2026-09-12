@@ -4,6 +4,9 @@ use rusqlite::OptionalExtension;
 
 use crate::core::business_rules::parse_voucher_number;
 use crate::db::LocalBooks;
+use crate::hive::{
+    bump_pending_attempt, clear_pending, enqueue_submit, pending_payload_json, KIND_VOUCHER,
+};
 use crate::online::is_online;
 use crate::sheets::{
     append_sheet_row, credentials_exist, fetch_sheet_a1, load_service_account, update_sheet_row,
@@ -18,7 +21,7 @@ use crate::{BooksError, Result, VOUCHER_RAW_TAB};
 pub const SHEET_LAST_COL: &str = "BL";
 
 pub fn conflict_message(voucher_number: i64) -> String {
-    format!("Voucher {voucher_number} was updated by another user.\nReload and submit again.")
+    crate::hive::hive_conflict_message(&format!("Voucher {voucher_number}"))
 }
 
 #[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
@@ -217,6 +220,16 @@ pub fn submit_voucher_with(
     }
     let local = load_local_voucher(books, voucher_number)?;
     let new_hash = fingerprint_parsed(&local.parsed);
+    let key = voucher_number.to_string();
+    let base_rev = crate::hive::get_hive_rev(books, voucher_number).unwrap_or(0);
+    enqueue_submit(
+        books,
+        &key,
+        KIND_VOUCHER,
+        &pending_payload_json(KIND_VOUCHER, &key),
+        &local.source_hash,
+        base_rev,
+    )?;
     match plan_and_write(&local.parsed, &local.source_hash, sheet) {
         Ok(SubmitOutcome::Ok { voucher_number: n }) => {
             if let Err(err) = mark_submitted(books, n, &new_hash) {
@@ -229,6 +242,7 @@ pub fn submit_voucher_with(
                 );
                 return Err(err);
             }
+            let _ = clear_pending(books, &key, KIND_VOUCHER);
             crate::log::event(
                 crate::log::Level::Info,
                 "submit",
@@ -240,6 +254,7 @@ pub fn submit_voucher_with(
         }
         Ok(conflict) => Ok(conflict),
         Err(err) => {
+            let _ = bump_pending_attempt(books, &key, KIND_VOUCHER, &err.to_string());
             crate::log::event(
                 crate::log::Level::Error,
                 "submit",

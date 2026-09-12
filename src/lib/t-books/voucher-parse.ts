@@ -3,6 +3,7 @@ import {
   emptyPayment,
   MAX_PAYMENT_BLOCKS,
   parseVoucherNumber,
+  shouldSkipSheetRow,
   type PaymentBlock,
 } from "./business_rules/index.ts";
 import type { RowError } from "./types.ts";
@@ -94,7 +95,17 @@ export function parseVoucherValues(values: string[][]): ParseReport {
     const row = i + 1;
     if (cols.every((c) => !c.trim())) continue;
     if (isHeaderRow(cols)) continue;
-    const voucherNumber = parseVoucherNumber(cell(cols, 0));
+    const rawA = cell(cols, 0);
+    const vendor = cell(cols, 3).trim();
+    if (shouldSkipSheetRow(rawA, vendor)) {
+      skipped += 1;
+      const parsed = parseVoucherNumber(rawA);
+      const errorType = parsed == null ? "invalid_voucher_number" : "skipped_empty";
+      logSkip(row, parsed, errorType);
+      errors.push({ voucherNumber: parsed, row, errorType });
+      continue;
+    }
+    const voucherNumber = parseVoucherNumber(rawA);
     if (voucherNumber == null) {
       skipped += 1;
       logSkip(row, null, "invalid_voucher_number");

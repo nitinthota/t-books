@@ -6,12 +6,15 @@ use std::collections::{BTreeMap, HashSet};
 use rusqlite::{params, Transaction};
 
 use crate::core::business_rules::{
-    amount_or_zero, empty_payment, parse_voucher_number, summarize_voucher, PaymentBlock,
-    VoucherInput, MAX_PAYMENT_BLOCKS,
+    amount_or_zero, empty_payment, parse_voucher_number, should_skip_sheet_row, summarize_voucher,
+    PaymentBlock, VoucherInput, MAX_PAYMENT_BLOCKS,
 };
 use crate::db::LocalBooks;
 use crate::online::is_online;
-use crate::sheets::{credentials_exist, fetch_sheet_values, load_service_account};
+use crate::sheets::{
+    create_tab_with_headers, credentials_exist, fetch_sheet_values, is_missing_tab_error,
+    load_service_account,
+};
 use crate::{BooksError, Result, VOUCHER_RAW_TAB};
 
 /// Column A + voucher_date + 7 register fields. Payment blocks start at index 9.
@@ -38,6 +41,7 @@ pub enum RefreshOutcome {
     },
     Dirty {
         voucher_numbers: Vec<i64>,
+        keys: Vec<crate::hive::DirtyKey>,
     },
 }
 
@@ -196,6 +200,22 @@ pub fn parse_voucher_values(values: &[Vec<String>]) -> ParseReport {
             continue;
         }
         let raw_a = cell(cols, 0);
+        let vendor = cell(cols, 3);
+        if should_skip_sheet_row(raw_a, vendor) {
+            skipped += 1;
+            let error_type = if parse_voucher_number(raw_a).is_none() {
+                "invalid_voucher_number"
+            } else {
+                "skipped_empty"
+            };
+            log_skip(row_no, parse_voucher_number(raw_a), error_type);
+            errors.push(RowError {
+                voucher_number: parse_voucher_number(raw_a),
+                row: row_no,
+                error_type: error_type.into(),
+            });
+            continue;
+        }
         let Some(voucher_number) = parse_voucher_number(raw_a) else {
             skipped += 1;
             let error_type = "invalid_voucher_number";
@@ -314,12 +334,17 @@ pub fn list_dirty_vouchers(books: &LocalBooks) -> Result<Vec<i64>> {
     Ok(out)
 }
 
-/// Dirty guard: if any local voucher is unsynced, Refresh must stop.
+/// Dirty guard: if any local dirty row (any kind) is unsynced, Refresh must stop.
 pub fn dirty_guard(books: &LocalBooks) -> Result<Option<Vec<i64>>> {
-    let dirty = list_dirty_vouchers(books)?;
-    if dirty.is_empty() {
+    let keys = crate::hive::list_dirty_keys(books)?;
+    if keys.is_empty() {
         Ok(None)
     } else {
+        let dirty: Vec<i64> = keys
+            .iter()
+            .filter(|k| k.kind == crate::hive::KIND_VOUCHER)
+            .filter_map(|k| k.key.parse().ok())
+            .collect();
         crate::log::event(
             crate::log::Level::Warn,
             "refresh",
@@ -611,25 +636,40 @@ fn require_online_and_credentials() -> Result<()> {
     Ok(())
 }
 
-fn fetch_parsed_from_google() -> Result<ParseReport> {
+fn fetch_parsed_from_google(allow_bootstrap: bool) -> Result<ParseReport> {
     require_online_and_credentials()?;
     let account = load_service_account()?;
-    let values = fetch_sheet_values(&account, VOUCHER_RAW_TAB)?;
-    Ok(parse_voucher_values(&values))
+    match fetch_sheet_values(&account, VOUCHER_RAW_TAB) {
+        Ok(values) => Ok(parse_voucher_values(&values)),
+        Err(err) if allow_bootstrap && is_missing_tab_error(&err.to_string()) => {
+            let headers: Vec<String> = crate::hive::tab_headers(crate::hive::KIND_VOUCHER);
+            create_tab_with_headers(&account, VOUCHER_RAW_TAB, &headers)?;
+            Ok(parse_voucher_values(&[headers]))
+        }
+        Err(err) => Err(err),
+    }
 }
 
 pub fn refresh_vouchers(books: &mut LocalBooks) -> Result<RefreshOutcome> {
+    refresh_vouchers_with(books, false)
+}
+
+pub fn refresh_vouchers_with(books: &mut LocalBooks, allow_bootstrap: bool) -> Result<RefreshOutcome> {
     require_online_and_credentials()?;
     if let Some(voucher_numbers) = dirty_guard(books)? {
-        return Ok(RefreshOutcome::Dirty { voucher_numbers });
+        let keys = crate::hive::list_dirty_keys(books)?;
+        return Ok(RefreshOutcome::Dirty {
+            voucher_numbers,
+            keys,
+        });
     }
-    let parsed = fetch_parsed_from_google()?;
+    let parsed = fetch_parsed_from_google(allow_bootstrap)?;
     apply_voucher_rows(books, &parsed)
 }
 
 pub fn force_refresh_vouchers(books: &mut LocalBooks) -> Result<RefreshOutcome> {
     require_online_and_credentials()?;
-    let parsed = fetch_parsed_from_google()?;
+    let parsed = fetch_parsed_from_google(false)?;
     apply_voucher_rows_discarding_dirty(books, &parsed)
 }
 
@@ -857,6 +897,10 @@ pub fn apply_one_force(books: &mut LocalBooks, row: &ParsedVoucher) -> Result<()
         "UPDATE vouchers SET is_dirty = 0, dirty = 0 WHERE voucher_number = ?1",
         params![row.voucher_number],
     )?;
+    tx.execute(
+        "DELETE FROM pending_submit WHERE kind = 'voucher' AND key = ?1",
+        params![row.voucher_number.to_string()],
+    )?;
     tx.commit()?;
     apply_parsed(books, &report, false)?;
     Ok(())
@@ -865,7 +909,8 @@ pub fn apply_one_force(books: &mut LocalBooks, row: &ParsedVoucher) -> Result<()
 pub fn mark_submitted(books: &LocalBooks, voucher_number: i64, source_hash: &str) -> Result<()> {
     let n = books.conn().execute(
         "UPDATE vouchers SET is_dirty = 0, dirty = 0, source_hash = ?1, fingerprint = ?1,
-         source = 'sheet', updated_at = datetime('now') WHERE voucher_number = ?2",
+         source = 'sheet', hive_rev = COALESCE(hive_rev, 0) + 1, updated_at = datetime('now')
+         WHERE voucher_number = ?2",
         params![source_hash, voucher_number],
     )?;
     if n == 0 {

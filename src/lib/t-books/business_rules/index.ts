@@ -6,6 +6,16 @@
 export const LOOPBOOK_LOGIC_VERSION = "v1";
 
 export {
+  allocateVoucherSerial,
+  keepPostedNumber,
+  nextConvertedPoNumber,
+  nextPaymentNumber,
+  nextProjectExpenseNumber,
+  nextPurchaseNumber,
+  nextSalaryNumber,
+} from "./alloc.ts";
+
+export {
   canonNum,
   conflictMessage,
   sha256Hex,
@@ -25,17 +35,52 @@ export {
   type PoSummary,
   type TermUnit,
 } from "./calc-po.ts";
-export { formatInr, formatRupees, paiseToRupees, rupeesToPaise } from "./money.ts";
+
+export {
+  clampAsOf,
+  currentIndianFy,
+  fyBounds,
+  fyOptions,
+  signedDrCr,
+  trialBalanced,
+  trialClosing,
+} from "./fy.ts";
+
+export {
+  bankAccountCode,
+  calcSalarySlip,
+  keepPostedPayNumber,
+  linesBalance,
+  monthLabel,
+  normalizePayKind,
+  outstandingAdvancePaise,
+  payrollMoneyChanged,
+  payrollNetOk,
+  pickPayrollAsOf,
+  salaryPeriodTaken,
+  salaryVoucherLines,
+  type LedgerLine,
+  type PayKind,
+  type PayrollMoney,
+  type SalarySlip,
+  MONTHS,
+} from "./hr-payroll.ts";
+
+export { formatInr, formatQty, formatRupees, paiseToRupees, rupeesToPaise } from "./money.ts";
+
 export {
   addPayment,
   amountOrZero,
   canAddPayment,
   emptyPayment,
+  isDottedChildSerial,
+  isDummySerial,
   MAX_PAYMENT_BLOCKS,
   normalizeVoucherNo,
   occupiedPaymentCount,
   parseAmount,
   parseVoucherNumber,
+  shouldSkipSheetRow,
   summarizeVoucher,
   voucher1001Fixture,
   voucherTotals,
@@ -43,6 +88,35 @@ export {
   type VoucherComputed,
   type VoucherInput,
 } from "./payment.ts";
+
+export {
+  allocMethodForPurchase,
+  classifyPurchasePayment,
+  formatPaymentNumber,
+  isChildPayNumber,
+  isLegacyPayNumber,
+  isPayVoucherNumber,
+  normalizeAllocMethod,
+  parsePayVoucherSeq,
+  paymentMatchesFilters,
+  purchasePayStatus,
+  taxInvoiceMissing,
+  type AllocMethod,
+  type PaymentClass,
+  type PaymentFilterKey,
+  type PurchasePayStatus,
+  type PurchaseType,
+} from "./purchase-status.ts";
+
+export {
+  canMutate,
+  canOpenAccessRole,
+  canRefreshRole,
+  canWrite,
+  requireAdmin,
+  requireWrite,
+} from "./rbac.ts";
+
 export {
   isNaTaxInv,
   paymentStatus,

@@ -9,6 +9,7 @@ import {
   LogOut,
   Package,
   RefreshCw,
+  Scale,
   Settings,
   ShoppingCart,
   Truck,
@@ -37,6 +38,7 @@ const NAV: { id: NavId; label: string; icon: typeof LayoutDashboard }[] = [
   { id: "sales", label: "Sales", icon: ShoppingCart },
   { id: "purchase", label: "Purchase", icon: Package },
   { id: "hr", label: "HR", icon: Users },
+  { id: "trial", label: "Trial", icon: Scale },
   { id: "inventory", label: "Inventory", icon: Boxes },
   { id: "logistics", label: "Logistics", icon: Truck },
   { id: "documents", label: "Documents", icon: FileText },
@@ -64,6 +66,7 @@ export const DesktopLayout = memo(function DesktopLayout({
   const refreshBusy = useBooks((s) => s.refreshBusy);
   const toast = useBooks((s) => s.toast);
   const conflictNumbers = useBooks((s) => s.conflictNumbers);
+  const conflictKeys = useBooks((s) => s.conflictKeys);
   const voucherSummary = useBooks((s) => s.voucherSummary);
   const refreshVouchers = useBooks((s) => s.refreshVouchers);
   const forceRefreshVouchers = useBooks((s) => s.forceRefreshVouchers);
@@ -167,6 +170,15 @@ export const DesktopLayout = memo(function DesktopLayout({
       {conflictNumbers && conflictNumbers.length > 0 ? (
         <ConflictModal
           voucherNumbers={conflictNumbers}
+          keys={conflictKeys}
+          busy={refreshBusy}
+          onKeepLocal={dismissConflict}
+          onDiscard={() => void forceRefreshVouchers()}
+        />
+      ) : conflictKeys && conflictKeys.length > 0 ? (
+        <ConflictModal
+          voucherNumbers={[]}
+          keys={conflictKeys}
           busy={refreshBusy}
           onKeepLocal={dismissConflict}
           onDiscard={() => void forceRefreshVouchers()}

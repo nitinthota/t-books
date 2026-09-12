@@ -8,6 +8,7 @@ import {
   listProjects,
   moveLogistics,
   saveLogistics,
+  submitOffice,
 } from "@/lib/t-books/office";
 import { invokeErrorMessage } from "@/lib/t-books/platform";
 import type { LogisticsRow } from "@/lib/t-books/types";
@@ -83,9 +84,12 @@ export default function LogisticsScreen({
     setDraft(next);
     setSaved(next);
     await reload();
+    return savedRow;
   }, [draft, reload]);
 
-  useRegisterUnsaved(dirty, persist);
+  useRegisterUnsaved(dirty, async () => {
+    await persist();
+  });
 
   function openEdit(row: LogisticsRow) {
     const next = fromRow(row);
@@ -100,6 +104,24 @@ export default function LogisticsScreen({
       await persist();
       setMode("list");
       setError(null);
+    } catch (err) {
+      setError(invokeErrorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onSubmitHive() {
+    setBusy(true);
+    try {
+      const saved = await persist();
+      const key = `TRIP-${saved.id}`;
+      const out = await submitOffice("logistics", key);
+      if (out.kind === "conflict") setError(out.message);
+      else {
+        setMode("list");
+        setError(null);
+      }
     } catch (err) {
       setError(invokeErrorMessage(err));
     } finally {
@@ -126,12 +148,18 @@ export default function LogisticsScreen({
     return (
       <ModuleFrame
         title={draft.id ? "Edit trip" : "New trip"}
+        hint="Save writes this PC only. Submit sends one hive row when the Logistics tab exists."
         onBack={() => requestLeave(() => setMode("list"))}
         error={error}
         actions={
-          <Button onClick={() => void onSave()} disabled={busy}>
-            {busy ? "Saving…" : "Save"}
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => void onSave()} disabled={busy}>
+              {busy ? "Saving…" : "Save"}
+            </Button>
+            <Button onClick={() => void onSubmitHive()} disabled={busy}>
+              Submit
+            </Button>
+          </div>
         }
       >
         <div className="grid gap-4 rounded-lg bg-paper-raised p-5 ring-1 ring-line sm:grid-cols-2">

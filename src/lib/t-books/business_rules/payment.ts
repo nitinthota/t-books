@@ -74,6 +74,28 @@ export function normalizeVoucherNo(raw: string): string {
   return s;
 }
 
+/** `20.1` — a child serial. Never a books row. `20.0` is not dotted. */
+export function isDottedChildSerial(raw: string): boolean {
+  return /^\d+\.(?!0+$)\d+$/.test(raw.trim());
+}
+
+/** Dummy / sample tokens are not real books. Never allocate from them. */
+export function isDummySerial(raw: string): boolean {
+  const s = raw.trim().toUpperCase();
+  return (
+    s.startsWith("VOUCHER_") || s.startsWith("SAMPLE") || s.startsWith("CUST_") || s.startsWith("VEND_")
+  );
+}
+
+export function shouldSkipSheetRow(serial: string, vendor: string): boolean {
+  const n = normalizeVoucherNo(serial);
+  if (!vendor.trim()) return true;
+  if (isDottedChildSerial(n)) return true;
+  if (isDummySerial(n)) return true;
+  if (n && !/^\d+$/.test(n) && n.length > 12) return true;
+  return false;
+}
+
 export function parseVoucherNumber(raw: string): number | null {
   const n = normalizeVoucherNo(raw);
   if (!/^\d+$/.test(n)) return null;

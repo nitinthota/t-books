@@ -50,9 +50,15 @@ export type RefreshOk = {
   warning: string | null;
 };
 
+export type DirtyKey = {
+  kind: string;
+  key: string;
+};
+
 export type RefreshDirty = {
   kind: "dirty";
   voucherNumbers: number[];
+  keys?: DirtyKey[];
 };
 
 export type RefreshOutcome = RefreshOk | RefreshDirty;
@@ -122,6 +128,7 @@ export type VoucherView = {
 
 export type PoItemIn = {
   id?: number | null;
+  itemName?: string;
   description: string;
   qty: number;
   rate: number;
@@ -168,6 +175,12 @@ export type PurchasePo = {
   totalValue: number;
   createdAt: string;
   updatedAt: string;
+  goodsReceived?: boolean;
+  taxInvoiceNo?: string;
+  taxInvoiceDate?: string;
+  isDirty?: boolean;
+  paidRupees?: number;
+  payStatus?: string;
   items: PoItemIn[];
 };
 
@@ -179,6 +192,35 @@ export type PurchasePoSave = {
   type: PurchaseType;
   totalValue: number;
   items: PoItemIn[];
+  goodsReceived?: boolean;
+  taxInvoiceNo?: string;
+  taxInvoiceDate?: string;
+};
+
+export type PurchasePayment = {
+  id?: number | null;
+  payNumber: string;
+  poNumber: string;
+  vendor: string;
+  project: string;
+  amountRupees: number;
+  allocMethod: string;
+  payClass: string;
+  missingTaxInvoice: boolean;
+  payDate: string;
+  remarks: string;
+  isDirty?: boolean;
+};
+
+export type PurchasePaymentSave = {
+  id?: number | null;
+  payNumber: string;
+  poNumber: string;
+  vendor: string;
+  amountRupees: number;
+  allocMethod: string;
+  payDate: string;
+  remarks: string;
 };
 
 export type HrPerson = {
@@ -186,6 +228,7 @@ export type HrPerson = {
   name: string;
   role: string;
   salary: number;
+  active?: string;
 };
 
 export type PayrollRow = {
@@ -198,6 +241,12 @@ export type PayrollRow = {
   pfTotal: number;
   tds: number;
   totalPaid: number;
+  salaryNumber?: string;
+  payKind?: string;
+  salaryRupees?: number;
+  recoveryRupees?: number;
+  netRupees?: number;
+  isDirty?: boolean;
 };
 
 export type InventoryRow = {
@@ -237,6 +286,44 @@ export type SearchHit = {
   subtitle: string;
 };
 
+export type AccessWrite = {
+  name: string;
+  email: string;
+  role: string;
+  active: string;
+};
+
+export type PendingSubmit = {
+  key: string;
+  kind: string;
+  payload: string;
+  baseFp: string;
+  baseRev: number;
+  attempts: number;
+  lastError: string;
+};
+
+export type TrialLine = {
+  account: string;
+  debitRupees: number;
+  creditRupees: number;
+};
+
+export type TrialBalance = {
+  fy: string;
+  asOf: string;
+  start: string;
+  end: string;
+  lines: TrialLine[];
+  totalDebitRupees: number;
+  totalCreditRupees: number;
+  balanced: boolean;
+};
+
+export type CasOutcome =
+  | { kind: "ok"; key: string; fp: string; rev: number }
+  | { kind: "conflict"; key: string; message: string };
+
 export type VendorRef = {
   vendor: string;
   gst: string;
@@ -250,6 +337,7 @@ export type NavId =
   | "sales"
   | "purchase"
   | "hr"
+  | "trial"
   | "inventory"
   | "logistics"
   | "documents"

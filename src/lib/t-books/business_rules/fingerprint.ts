@@ -149,6 +149,7 @@ export function voucherFingerprint(row: FingerprintFields): string {
   return sha256Hex(voucherCanonical(row));
 }
 
-export function conflictMessage(voucherNumber: number): string {
-  return `Voucher ${voucherNumber} was updated by another user.\nReload and submit again.`;
+export function conflictMessage(key: string | number): string {
+  const label = typeof key === "number" ? `Voucher ${key}` : key;
+  return `${label} was just updated by another user. Reload and submit again.`;
 }

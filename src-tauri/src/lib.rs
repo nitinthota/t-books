@@ -2,23 +2,32 @@ mod access;
 mod auth;
 pub mod core;
 mod db;
+mod hive;
 mod log;
 mod office;
+mod office_sync;
 mod online;
 mod ops;
 mod passwords;
 mod sheets;
 mod submit;
 pub mod testdata;
+mod trial;
 mod vouchers;
 
 pub use access::{
     apply_access_rows, fetch_access_rows, get_access_snapshot, get_last_synced, list_access,
-    parse_access_values, refresh_access, AccessRow, AccessSnapshot, AppStatus,
+    parse_access_values, refresh_access, write_access_row, AccessRow, AccessSnapshot, AccessWrite,
+    AppStatus,
 };
 pub use auth::{inspect_email, set_first_password, sign_in};
 pub use core::business_rules;
 pub use db::{data_dir, db_path, open_at, open_db, open_memory, LocalBooks};
+pub use hive::{
+    hive_conflict_message, list_dirty_keys, list_pending, submit_hive_row, tab_headers, tab_name,
+    CasOutcome, DirtyKey, Hive, MemoryHive, PendingSubmit, KIND_ACCESS, KIND_DOCUMENT,
+    KIND_INVENTORY, KIND_LOGISTICS, KIND_PAYMENT, KIND_PURCHASE, KIND_SALARY, KIND_VOUCHER,
+};
 pub use log::{
     apply_debug_flag, clear_logs, error_log_path, event as log_event, is_debug,
     performance as log_performance, set_log_dir, Level as LogLevel,
@@ -29,10 +38,14 @@ pub use ops::{
     OpsInfo, UpdateInfo,
 };
 pub use office::{
-    delete_sales_po, list_sales_po, save_sales_po, DocumentRow, HrPerson, InventoryRow, LogisticsRow,
-    PayrollRow, PoItemIn, PoPreview, PurchasePo, PurchasePoSave, SalesPo, SalesPoSave, SearchHit,
-    VendorRef,
+    delete_purchase_payment, delete_purchase_po, delete_sales_po, list_purchase_payments,
+    list_purchase_po, list_sales_po, save_purchase_payment, save_purchase_po, save_sales_po,
+    DocumentRow, HrPerson, InventoryRow, LogisticsRow, PayrollRow, PoItemIn, PoPreview,
+    PurchasePayment, PurchasePaymentSave, PurchasePo, PurchasePoSave, SalesPo, SalesPoSave,
+    SearchHit, VendorRef,
 };
+pub use office_sync::{submit_office, submit_office_with};
+pub use trial::{available_fy, build_trial, TrialBalance, TrialLine};
 pub use passwords::{hash_password, validate_new_password, verify_password};
 pub use submit::{
     conflict_message, reload_voucher, reload_voucher_with, submit_voucher, submit_voucher_with,
@@ -58,7 +71,7 @@ pub const OFFLINE_BANNER: &str =
     "Offline — working on this PC. Access list and Refresh paused.";
 pub const CREDENTIALS_BANNER: &str = "Google credentials not found. Running offline.";
 pub const MIN_PASSWORD_LENGTH: usize = 8;
-pub const SCHEMA_VERSION: &str = "6";
+pub const SCHEMA_VERSION: &str = "8";
 pub const LOOPBOOK_LOGIC_VERSION: &str = business_rules::LOOPBOOK_LOGIC_VERSION;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
@@ -302,7 +315,17 @@ mod desktop {
     fn refresh_access(
         state: tauri::State<AppState>,
     ) -> std::result::Result<AccessSnapshot, String> {
-        let rows = match fetch_access_rows() {
+        let allow_bootstrap = {
+            let session = state.session.lock().expect("session");
+            session
+                .as_ref()
+                .map(|s| {
+                    s.role.eq_ignore_ascii_case("owner")
+                        || s.email.eq_ignore_ascii_case(OWNER_EMAIL)
+                })
+                .unwrap_or(false)
+        };
+        let rows = match crate::access::fetch_access_rows_with(allow_bootstrap) {
             Ok(rows) => rows,
             Err(err) => {
                 let message = err.to_string();
@@ -347,8 +370,18 @@ mod desktop {
     fn refresh_vouchers(
         state: tauri::State<AppState>,
     ) -> std::result::Result<RefreshOutcome, String> {
+        let allow_bootstrap = {
+            let session = state.session.lock().expect("session");
+            session
+                .as_ref()
+                .map(|s| {
+                    s.role.eq_ignore_ascii_case("owner")
+                        || s.email.eq_ignore_ascii_case(OWNER_EMAIL)
+                })
+                .unwrap_or(false)
+        };
         let mut books = state.books.lock().expect("local books");
-        match crate::vouchers::refresh_vouchers(&mut books) {
+        match crate::vouchers::refresh_vouchers_with(&mut books, allow_bootstrap) {
             Ok(out) => {
                 if matches!(&out, RefreshOutcome::Ok { .. }) {
                     set_last_error(&state.last_error, None);
@@ -410,6 +443,28 @@ mod desktop {
         match state.session.lock().expect("session").as_ref() {
             Some(s) if s.role == "owner" || s.role == "admin" => Ok(()),
             Some(_) => Err("Your role cannot submit to Google.".into()),
+            None => Err("Sign in first.".into()),
+        }
+    }
+
+    fn require_mutate(state: &tauri::State<AppState>) -> std::result::Result<Session, String> {
+        match state.session.lock().expect("session").as_ref() {
+            Some(s) => {
+                crate::core::business_rules::require_write(&s.role)?;
+                Ok(s.clone())
+            }
+            None => Err("Sign in first.".into()),
+        }
+    }
+
+    fn require_owner(state: &tauri::State<AppState>) -> std::result::Result<Session, String> {
+        match state.session.lock().expect("session").as_ref() {
+            Some(s)
+                if s.role == "owner" || crate::is_hardcoded_owner(&s.email) =>
+            {
+                Ok(s.clone())
+            }
+            Some(_) => Err("Only the owner can change Access.".into()),
             None => Err("Sign in first.".into()),
         }
     }
@@ -480,12 +535,14 @@ mod desktop {
         state: tauri::State<AppState>,
         payload: SalesPoSave,
     ) -> std::result::Result<SalesPo, String> {
+        require_mutate(&state)?;
         let mut books = state.books.lock().expect("local books");
         crate::office::save_sales_po(&mut books, payload).map_err(map_err)
     }
 
     #[tauri::command]
     fn delete_sales_po(state: tauri::State<AppState>, id: i64) -> std::result::Result<(), String> {
+        require_mutate(&state)?;
         let books = state.books.lock().expect("local books");
         crate::office::delete_sales_po(&books, id).map_err(map_err)
     }
@@ -517,6 +574,7 @@ mod desktop {
         state: tauri::State<AppState>,
         payload: PurchasePoSave,
     ) -> std::result::Result<PurchasePo, String> {
+        require_mutate(&state)?;
         let mut books = state.books.lock().expect("local books");
         crate::office::save_purchase_po(&mut books, payload).map_err(map_err)
     }
@@ -526,6 +584,7 @@ mod desktop {
         state: tauri::State<AppState>,
         id: i64,
     ) -> std::result::Result<(), String> {
+        require_mutate(&state)?;
         let books = state.books.lock().expect("local books");
         crate::office::delete_purchase_po(&books, id).map_err(map_err)
     }
@@ -541,12 +600,14 @@ mod desktop {
         state: tauri::State<AppState>,
         payload: HrPerson,
     ) -> std::result::Result<HrPerson, String> {
+        require_mutate(&state)?;
         let books = state.books.lock().expect("local books");
         crate::office::save_hr_person(&books, payload).map_err(map_err)
     }
 
     #[tauri::command]
     fn delete_hr_person(state: tauri::State<AppState>, id: i64) -> std::result::Result<(), String> {
+        require_mutate(&state)?;
         let books = state.books.lock().expect("local books");
         crate::office::delete_hr_person(&books, id).map_err(map_err)
     }
@@ -564,12 +625,14 @@ mod desktop {
         state: tauri::State<AppState>,
         payload: PayrollRow,
     ) -> std::result::Result<PayrollRow, String> {
+        require_mutate(&state)?;
         let books = state.books.lock().expect("local books");
         crate::office::save_hr_payroll(&books, payload).map_err(map_err)
     }
 
     #[tauri::command]
     fn delete_hr_payroll(state: tauri::State<AppState>, id: i64) -> std::result::Result<(), String> {
+        require_mutate(&state)?;
         let books = state.books.lock().expect("local books");
         crate::office::delete_hr_payroll(&books, id).map_err(map_err)
     }
@@ -588,12 +651,14 @@ mod desktop {
         state: tauri::State<AppState>,
         payload: InventoryRow,
     ) -> std::result::Result<InventoryRow, String> {
+        require_mutate(&state)?;
         let books = state.books.lock().expect("local books");
         crate::office::save_inventory(&books, payload).map_err(map_err)
     }
 
     #[tauri::command]
     fn delete_inventory(state: tauri::State<AppState>, id: i64) -> std::result::Result<(), String> {
+        require_mutate(&state)?;
         let books = state.books.lock().expect("local books");
         crate::office::delete_inventory(&books, id).map_err(map_err)
     }
@@ -604,6 +669,7 @@ mod desktop {
         id: i64,
         project: String,
     ) -> std::result::Result<InventoryRow, String> {
+        require_mutate(&state)?;
         let books = state.books.lock().expect("local books");
         crate::office::move_inventory(&books, id, &project).map_err(map_err)
     }
@@ -621,12 +687,14 @@ mod desktop {
         state: tauri::State<AppState>,
         payload: LogisticsRow,
     ) -> std::result::Result<LogisticsRow, String> {
+        require_mutate(&state)?;
         let books = state.books.lock().expect("local books");
         crate::office::save_logistics(&books, payload).map_err(map_err)
     }
 
     #[tauri::command]
     fn delete_logistics(state: tauri::State<AppState>, id: i64) -> std::result::Result<(), String> {
+        require_mutate(&state)?;
         let books = state.books.lock().expect("local books");
         crate::office::delete_logistics(&books, id).map_err(map_err)
     }
@@ -637,6 +705,7 @@ mod desktop {
         id: i64,
         project: String,
     ) -> std::result::Result<LogisticsRow, String> {
+        require_mutate(&state)?;
         let books = state.books.lock().expect("local books");
         crate::office::move_logistics(&books, id, &project).map_err(map_err)
     }
@@ -654,12 +723,14 @@ mod desktop {
         state: tauri::State<AppState>,
         payload: DocumentRow,
     ) -> std::result::Result<DocumentRow, String> {
+        require_mutate(&state)?;
         let books = state.books.lock().expect("local books");
         crate::office::save_document(&books, payload).map_err(map_err)
     }
 
     #[tauri::command]
     fn delete_document(state: tauri::State<AppState>, id: i64) -> std::result::Result<(), String> {
+        require_mutate(&state)?;
         let books = state.books.lock().expect("local books");
         crate::office::delete_document(&books, id).map_err(map_err)
     }
@@ -692,6 +763,93 @@ mod desktop {
     fn list_vendors(state: tauri::State<AppState>) -> std::result::Result<Vec<VendorRef>, String> {
         let books = state.books.lock().expect("local books");
         crate::office::list_vendors(&books).map_err(map_err)
+    }
+
+    #[tauri::command]
+    fn list_purchase_payments(
+        state: tauri::State<AppState>,
+        po_number: Option<String>,
+    ) -> std::result::Result<Vec<PurchasePayment>, String> {
+        let books = state.books.lock().expect("local books");
+        crate::office::list_purchase_payments(&books, po_number.as_deref()).map_err(map_err)
+    }
+
+    #[tauri::command]
+    fn save_purchase_payment(
+        state: tauri::State<AppState>,
+        payload: PurchasePaymentSave,
+    ) -> std::result::Result<PurchasePayment, String> {
+        require_mutate(&state)?;
+        let mut books = state.books.lock().expect("local books");
+        crate::office::save_purchase_payment(&mut books, payload).map_err(map_err)
+    }
+
+    #[tauri::command]
+    fn delete_purchase_payment(
+        state: tauri::State<AppState>,
+        id: i64,
+    ) -> std::result::Result<(), String> {
+        require_mutate(&state)?;
+        let books = state.books.lock().expect("local books");
+        crate::office::delete_purchase_payment(&books, id).map_err(map_err)
+    }
+
+    #[tauri::command]
+    fn submit_office(
+        state: tauri::State<AppState>,
+        kind: String,
+        key: String,
+    ) -> std::result::Result<CasOutcome, String> {
+        require_submit_role(&state)?;
+        let allow = state
+            .session
+            .lock()
+            .expect("session")
+            .as_ref()
+            .map(|s| s.role == "owner" || crate::is_hardcoded_owner(&s.email))
+            .unwrap_or(false);
+        let books = state.books.lock().expect("local books");
+        crate::office_sync::submit_office(&books, &kind, &key, allow).map_err(map_err)
+    }
+
+    #[tauri::command]
+    fn get_dirty_keys(state: tauri::State<AppState>) -> std::result::Result<Vec<DirtyKey>, String> {
+        let books = state.books.lock().expect("local books");
+        crate::hive::list_dirty_keys(&books).map_err(map_err)
+    }
+
+    #[tauri::command]
+    fn list_pending_submit(
+        state: tauri::State<AppState>,
+    ) -> std::result::Result<Vec<PendingSubmit>, String> {
+        let books = state.books.lock().expect("local books");
+        crate::hive::list_pending(&books).map_err(map_err)
+    }
+
+    #[tauri::command]
+    fn get_trial(
+        state: tauri::State<AppState>,
+        fy: Option<String>,
+        as_of: Option<String>,
+    ) -> std::result::Result<TrialBalance, String> {
+        let books = state.books.lock().expect("local books");
+        crate::trial::build_trial(&books, fy.as_deref(), as_of.as_deref()).map_err(map_err)
+    }
+
+    #[tauri::command]
+    fn list_fy(state: tauri::State<AppState>) -> std::result::Result<Vec<String>, String> {
+        let books = state.books.lock().expect("local books");
+        crate::trial::available_fy(&books).map_err(map_err)
+    }
+
+    #[tauri::command]
+    fn write_access_row(
+        state: tauri::State<AppState>,
+        payload: AccessWrite,
+    ) -> std::result::Result<AccessRow, String> {
+        require_owner(&state)?;
+        let mut books = state.books.lock().expect("local books");
+        crate::access::write_access_row(&mut books, payload).map_err(map_err)
     }
 
     pub fn run() {
@@ -746,6 +904,15 @@ mod desktop {
                 get_purchase_po,
                 save_purchase_po,
                 delete_purchase_po,
+                list_purchase_payments,
+                save_purchase_payment,
+                delete_purchase_payment,
+                submit_office,
+                get_dirty_keys,
+                list_pending_submit,
+                get_trial,
+                list_fy,
+                write_access_row,
                 list_hr_people,
                 save_hr_person,
                 delete_hr_person,

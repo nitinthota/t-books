@@ -284,6 +284,43 @@ fn migrate(conn: &Connection) -> Result<()> {
 
         CREATE INDEX IF NOT EXISTS idx_documents_linked ON documents(linked_type, linked_id);
         CREATE INDEX IF NOT EXISTS idx_documents_name ON documents(name);
+
+        CREATE TABLE IF NOT EXISTS pending_submit (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          key TEXT NOT NULL,
+          kind TEXT NOT NULL,
+          payload TEXT NOT NULL DEFAULT '{}',
+          base_fp TEXT NOT NULL DEFAULT '',
+          base_rev INTEGER NOT NULL DEFAULT 0,
+          attempts INTEGER NOT NULL DEFAULT 0,
+          last_error TEXT,
+          created_at TEXT,
+          updated_at TEXT,
+          UNIQUE(key, kind)
+        );
+        CREATE INDEX IF NOT EXISTS idx_pending_submit_kind ON pending_submit(kind);
+
+        CREATE TABLE IF NOT EXISTS purchase_payments (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          pay_number TEXT NOT NULL,
+          po_number TEXT NOT NULL DEFAULT '',
+          vendor TEXT,
+          project TEXT,
+          amount_rupees REAL NOT NULL DEFAULT 0,
+          alloc_method TEXT NOT NULL DEFAULT 'advance',
+          pay_class TEXT NOT NULL DEFAULT 'advance',
+          missing_tax_invoice INTEGER NOT NULL DEFAULT 0,
+          pay_date TEXT,
+          remarks TEXT,
+          is_dirty INTEGER NOT NULL DEFAULT 1,
+          hive_rev INTEGER NOT NULL DEFAULT 0,
+          source_hash TEXT,
+          created_at TEXT,
+          updated_at TEXT
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_purchase_payments_number
+          ON purchase_payments(pay_number COLLATE NOCASE);
+        CREATE INDEX IF NOT EXISTS idx_purchase_payments_po ON purchase_payments(po_number);
         "#,
     )?;
     ensure_column(conn, "vouchers", "is_dirty", "INTEGER NOT NULL DEFAULT 0")?;
@@ -293,12 +330,39 @@ fn migrate(conn: &Connection) -> Result<()> {
     ensure_column(conn, "vouchers", "status", "TEXT")?;
     ensure_column(conn, "vouchers", "tax_flag", "TEXT")?;
     ensure_column(conn, "vouchers", "source_hash", "TEXT")?;
+    ensure_column(conn, "vouchers", "hive_rev", "INTEGER NOT NULL DEFAULT 0")?;
     conn.execute(
         "UPDATE vouchers SET source_hash = fingerprint WHERE (source_hash IS NULL OR source_hash = '') AND fingerprint IS NOT NULL AND fingerprint != ''",
         [],
     )?;
     ensure_column(conn, "sales_po_items", "gst_pct", "REAL NOT NULL DEFAULT 0")?;
     ensure_column(conn, "purchase_po_items", "gst_pct", "REAL NOT NULL DEFAULT 0")?;
+    ensure_column(conn, "sales_po_items", "item_name", "TEXT")?;
+    ensure_column(conn, "purchase_po_items", "item_name", "TEXT")?;
+    ensure_column(conn, "purchase_po", "goods_received", "INTEGER NOT NULL DEFAULT 0")?;
+    ensure_column(conn, "purchase_po", "tax_invoice_no", "TEXT")?;
+    ensure_column(conn, "purchase_po", "tax_invoice_date", "TEXT")?;
+    ensure_column(conn, "purchase_po", "is_dirty", "INTEGER NOT NULL DEFAULT 0")?;
+    ensure_column(conn, "purchase_po", "hive_rev", "INTEGER NOT NULL DEFAULT 0")?;
+    ensure_column(conn, "purchase_po", "source_hash", "TEXT")?;
+    ensure_column(conn, "hr_people", "active", "TEXT NOT NULL DEFAULT 'Yes'")?;
+    ensure_column(conn, "hr_payroll", "salary_number", "TEXT")?;
+    ensure_column(conn, "hr_payroll", "pay_kind", "TEXT NOT NULL DEFAULT 'salary'")?;
+    ensure_column(conn, "hr_payroll", "salary_rupees", "REAL NOT NULL DEFAULT 0")?;
+    ensure_column(conn, "hr_payroll", "recovery_rupees", "REAL NOT NULL DEFAULT 0")?;
+    ensure_column(conn, "hr_payroll", "net_rupees", "REAL NOT NULL DEFAULT 0")?;
+    ensure_column(conn, "hr_payroll", "is_dirty", "INTEGER NOT NULL DEFAULT 0")?;
+    ensure_column(conn, "hr_payroll", "hive_rev", "INTEGER NOT NULL DEFAULT 0")?;
+    ensure_column(conn, "hr_payroll", "source_hash", "TEXT")?;
+    ensure_column(conn, "inventory", "is_dirty", "INTEGER NOT NULL DEFAULT 0")?;
+    ensure_column(conn, "inventory", "hive_rev", "INTEGER NOT NULL DEFAULT 0")?;
+    ensure_column(conn, "inventory", "source_hash", "TEXT")?;
+    ensure_column(conn, "logistics", "is_dirty", "INTEGER NOT NULL DEFAULT 0")?;
+    ensure_column(conn, "logistics", "hive_rev", "INTEGER NOT NULL DEFAULT 0")?;
+    ensure_column(conn, "logistics", "source_hash", "TEXT")?;
+    ensure_column(conn, "documents", "is_dirty", "INTEGER NOT NULL DEFAULT 0")?;
+    ensure_column(conn, "documents", "hive_rev", "INTEGER NOT NULL DEFAULT 0")?;
+    ensure_column(conn, "documents", "source_hash", "TEXT")?;
     conn.execute(
         "UPDATE vouchers SET is_dirty = 1 WHERE COALESCE(dirty, 0) = 1 AND COALESCE(is_dirty, 0) = 0",
         [],
@@ -336,13 +400,14 @@ mod tests {
                     'users_local', 'app_meta', 'access_cache',
                     'vendors', 'projects', 'vouchers', 'voucher_payments',
                     'sales_po', 'sales_po_items', 'purchase_po', 'purchase_po_items',
-                    'hr_people', 'hr_payroll', 'inventory', 'logistics', 'documents'
+                    'hr_people', 'hr_payroll', 'inventory', 'logistics', 'documents',
+                    'pending_submit', 'purchase_payments'
                 )",
                 [],
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(count, 16);
+        assert_eq!(count, 18);
         let users: i64 = books
             .conn()
             .query_row("SELECT COUNT(*) FROM users_local", [], |row| row.get(0))
@@ -366,7 +431,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, "6");
+        assert_eq!(version, "8");
         let logic: String = books
             .conn()
             .query_row(

@@ -116,6 +116,28 @@ CREATE TABLE IF NOT EXISTS documents (
 
 CREATE INDEX IF NOT EXISTS idx_documents_linked ON documents(linked_type, linked_id);
 CREATE INDEX IF NOT EXISTS idx_documents_name ON documents(name);
+
+CREATE TABLE IF NOT EXISTS purchase_payments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  pay_number TEXT NOT NULL,
+  po_number TEXT NOT NULL DEFAULT '',
+  vendor TEXT,
+  project TEXT,
+  amount_rupees REAL NOT NULL DEFAULT 0,
+  alloc_method TEXT NOT NULL DEFAULT 'advance',
+  pay_class TEXT NOT NULL DEFAULT 'advance',
+  missing_tax_invoice INTEGER NOT NULL DEFAULT 0,
+  pay_date TEXT,
+  remarks TEXT,
+  is_dirty INTEGER NOT NULL DEFAULT 1,
+  hive_rev INTEGER NOT NULL DEFAULT 0,
+  source_hash TEXT,
+  created_at TEXT,
+  updated_at TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_purchase_payments_number
+  ON purchase_payments(pay_number COLLATE NOCASE);
+CREATE INDEX IF NOT EXISTS idx_purchase_payments_po ON purchase_payments(po_number);
 `;
 
 export const SCHEMA_SQL = `
@@ -203,6 +225,21 @@ CREATE TABLE IF NOT EXISTS voucher_payments (
 
 CREATE INDEX IF NOT EXISTS idx_vouchers_is_dirty ON vouchers(is_dirty);
 
+CREATE TABLE IF NOT EXISTS pending_submit (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  key TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  payload TEXT NOT NULL DEFAULT '{}',
+  base_fp TEXT NOT NULL DEFAULT '',
+  base_rev INTEGER NOT NULL DEFAULT 0,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT,
+  created_at TEXT,
+  updated_at TEXT,
+  UNIQUE(key, kind)
+);
+CREATE INDEX IF NOT EXISTS idx_pending_submit_kind ON pending_submit(kind);
+
 ${OFFICE_SCHEMA_SQL}
 `;
 
@@ -235,4 +272,33 @@ export const VOUCHER_COLUMN_MIGRATIONS: Array<{ name: string; decl: string }> = 
   { name: "status", decl: "TEXT" },
   { name: "tax_flag", decl: "TEXT" },
   { name: "source_hash", decl: "TEXT" },
+  { name: "hive_rev", decl: "INTEGER NOT NULL DEFAULT 0" },
+];
+
+export const OFFICE_COLUMN_MIGRATIONS: Array<{ table: string; name: string; decl: string }> = [
+  { table: "sales_po_items", name: "item_name", decl: "TEXT" },
+  { table: "purchase_po_items", name: "item_name", decl: "TEXT" },
+  { table: "purchase_po", name: "goods_received", decl: "INTEGER NOT NULL DEFAULT 0" },
+  { table: "purchase_po", name: "tax_invoice_no", decl: "TEXT" },
+  { table: "purchase_po", name: "tax_invoice_date", decl: "TEXT" },
+  { table: "purchase_po", name: "is_dirty", decl: "INTEGER NOT NULL DEFAULT 0" },
+  { table: "purchase_po", name: "hive_rev", decl: "INTEGER NOT NULL DEFAULT 0" },
+  { table: "purchase_po", name: "source_hash", decl: "TEXT" },
+  { table: "hr_people", name: "active", decl: "TEXT NOT NULL DEFAULT 'Yes'" },
+  { table: "hr_payroll", name: "salary_number", decl: "TEXT" },
+  { table: "hr_payroll", name: "pay_kind", decl: "TEXT NOT NULL DEFAULT 'salary'" },
+  { table: "hr_payroll", name: "salary_rupees", decl: "REAL NOT NULL DEFAULT 0" },
+  { table: "hr_payroll", name: "recovery_rupees", decl: "REAL NOT NULL DEFAULT 0" },
+  { table: "hr_payroll", name: "net_rupees", decl: "REAL NOT NULL DEFAULT 0" },
+  { table: "hr_payroll", name: "is_dirty", decl: "INTEGER NOT NULL DEFAULT 0" },
+  { table: "hr_payroll", name: "hive_rev", decl: "INTEGER NOT NULL DEFAULT 0" },
+  { table: "inventory", name: "is_dirty", decl: "INTEGER NOT NULL DEFAULT 0" },
+  { table: "inventory", name: "hive_rev", decl: "INTEGER NOT NULL DEFAULT 0" },
+  { table: "inventory", name: "source_hash", decl: "TEXT" },
+  { table: "logistics", name: "is_dirty", decl: "INTEGER NOT NULL DEFAULT 0" },
+  { table: "logistics", name: "hive_rev", decl: "INTEGER NOT NULL DEFAULT 0" },
+  { table: "logistics", name: "source_hash", decl: "TEXT" },
+  { table: "documents", name: "is_dirty", decl: "INTEGER NOT NULL DEFAULT 0" },
+  { table: "documents", name: "hive_rev", decl: "INTEGER NOT NULL DEFAULT 0" },
+  { table: "documents", name: "source_hash", decl: "TEXT" },
 ];

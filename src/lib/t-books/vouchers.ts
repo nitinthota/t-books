@@ -44,9 +44,60 @@ export function listDirtyVouchers(): number[] {
   ).map((row) => Number(row.voucher_number));
 }
 
+export function listDirtyKeys(): Array<{ kind: string; key: string }> {
+  const keys: Array<{ kind: string; key: string }> = [];
+  const seen = new Set<string>();
+  for (const n of listDirtyVouchers()) {
+    const id = `voucher:${n}`;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    keys.push({ kind: "voucher", key: String(n) });
+  }
+  try {
+    const pending = all<{ key: string; kind: string }>(
+      "SELECT key, kind FROM pending_submit ORDER BY kind, key",
+    );
+    for (const row of pending) {
+      const id = `${row.kind}:${row.key}`;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      keys.push({ kind: String(row.kind), key: String(row.key) });
+    }
+  } catch {
+    /* table may not exist on a mid-migration open */
+  }
+  const extra: Array<{ kind: string; sql: string }> = [
+    { kind: "purchase", sql: "SELECT po_number AS key FROM purchase_po WHERE COALESCE(is_dirty,0) = 1 AND TRIM(po_number) != ''" },
+    { kind: "payment", sql: "SELECT pay_number AS key FROM purchase_payments WHERE COALESCE(is_dirty,0) = 1 AND TRIM(pay_number) != ''" },
+    { kind: "salary", sql: "SELECT salary_number AS key FROM hr_payroll WHERE COALESCE(is_dirty,0) = 1 AND TRIM(COALESCE(salary_number,'')) != ''" },
+    { kind: "inventory", sql: "SELECT 'INV-' || id AS key FROM inventory WHERE COALESCE(is_dirty,0) = 1" },
+    { kind: "logistics", sql: "SELECT 'TRIP-' || id AS key FROM logistics WHERE COALESCE(is_dirty,0) = 1" },
+    { kind: "document", sql: "SELECT 'DOC-' || id AS key FROM documents WHERE COALESCE(is_dirty,0) = 1" },
+  ];
+  for (const { kind, sql } of extra) {
+    try {
+      for (const row of all<{ key: string }>(sql)) {
+        const key = String(row.key ?? "");
+        if (!key) continue;
+        const id = `${kind}:${key}`;
+        if (seen.has(id)) continue;
+        seen.add(id);
+        keys.push({ kind, key });
+      }
+    } catch {
+      /* columns may be mid-migration */
+    }
+  }
+  return keys;
+}
+
 export function dirtyGuard(): number[] | null {
-  const dirty = listDirtyVouchers();
-  return dirty.length > 0 ? dirty : null;
+  const keys = listDirtyKeys();
+  if (keys.length === 0) return null;
+  return keys
+    .filter((k) => k.kind === "voucher")
+    .map((k) => Number(k.key))
+    .filter((n) => Number.isFinite(n));
 }
 
 function deleteDirtyInTx(): void {
@@ -322,7 +373,7 @@ export function getVoucher(voucherNumber: number): VoucherView {
 export function refreshVouchers(): RefreshOutcome {
   if (!isBrowserOnline()) throw new Error(OFFLINE_VOUCHER_REFRESH_ERROR);
   const dirty = dirtyGuard();
-  if (dirty) return { kind: "dirty", voucherNumbers: dirty };
+  if (dirty) return { kind: "dirty", voucherNumbers: dirty, keys: listDirtyKeys() };
   throw new Error(CREDENTIALS_MISSING_ERROR);
 }
 

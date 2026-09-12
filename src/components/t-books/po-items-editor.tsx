@@ -8,6 +8,7 @@ import type { PoItemIn } from "@/lib/t-books/types";
 
 export type ItemDraft = {
   key: string;
+  itemName: string;
   description: string;
   qty: string;
   rate: string;
@@ -15,13 +16,21 @@ export type ItemDraft = {
 };
 
 export function emptyItem(): ItemDraft {
-  return { key: `${Date.now()}-${Math.random()}`, description: "", qty: "1", rate: "0", gstPct: "18" };
+  return {
+    key: `${Date.now()}-${Math.random()}`,
+    itemName: "",
+    description: "",
+    qty: "1",
+    rate: "0",
+    gstPct: "18",
+  };
 }
 
 export function draftsFromItems(items: PoItemIn[]): ItemDraft[] {
   if (!items.length) return [emptyItem()];
   return items.map((item) => ({
-    key: String(item.id ?? `${item.description}-${item.qty}`),
+    key: String(item.id ?? `${item.itemName ?? ""}-${item.description}-${item.qty}`),
+    itemName: item.itemName ?? "",
     description: item.description,
     qty: String(item.qty ?? 0),
     rate: String(item.rate ?? 0),
@@ -38,6 +47,7 @@ export function parseItemDrafts(drafts: ItemDraft[]): PoItemIn[] {
     if (row.rate.trim() && !Number.isFinite(rate)) throw new Error("Rate must be a number.");
     if (row.gstPct.trim() && !Number.isFinite(gstPct)) throw new Error("GST % must be a number.");
     return {
+      itemName: (row.itemName ?? "").trim(),
       description: row.description,
       qty: Number.isFinite(qty) ? qty : 0,
       rate: Number.isFinite(rate) ? rate : 0,
@@ -85,9 +95,10 @@ export function PoItemsEditor({
         </Button>
       </div>
       <div className="overflow-x-auto rounded-lg bg-paper shadow-[0_0_0_1px_var(--color-line)]">
-        <table className="w-full min-w-[40rem] text-left text-sm">
+        <table className="w-full min-w-[48rem] text-left text-sm">
           <thead className="border-b border-line text-xs font-medium uppercase tracking-wide text-ink-subtle">
             <tr>
+              <th className="px-3 py-2">Item</th>
               <th className="px-3 py-2">Description</th>
               <th className="px-3 py-2">Qty</th>
               <th className="px-3 py-2">Rate</th>
@@ -99,6 +110,13 @@ export function PoItemsEditor({
           <tbody>
             {items.map((row, index) => (
               <tr key={row.key} className="table-row">
+                <td className="px-2 py-2">
+                  <Input
+                    value={row.itemName}
+                    onChange={(e) => patch(index, { itemName: e.target.value })}
+                    placeholder="Name"
+                  />
+                </td>
                 <td className="px-2 py-2">
                   <Input
                     value={row.description}

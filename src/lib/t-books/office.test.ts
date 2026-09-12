@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { calcPayroll, calcPo, paiseToRupees } from "./business_rules/index.ts";
+import {
+  calcPayroll,
+  calcPo,
+  calcSalarySlip,
+  keepPostedPayNumber,
+  nextSalaryNumber,
+  paiseToRupees,
+  rupeesToPaise,
+} from "./business_rules/index.ts";
 
 test("sales/purchase totals use calcPo — negatives are deductions", () => {
   const preview = calcPo({
@@ -20,4 +28,19 @@ test("sales/purchase totals use calcPo — negatives are deductions", () => {
 test("payroll PF total is employee plus company via calcPayroll", () => {
   const p = calcPayroll({ pf_company_rupees: 1800, pf_employee_rupees: 1800, tds_rupees: 500 });
   assert.equal(p.pf_total_paise, 360_000);
+});
+
+test("blank payroll allocates SAL-0001; posted number is sacred", () => {
+  assert.equal(nextSalaryNumber([]), "SAL-0001");
+  assert.equal(nextSalaryNumber(["SAL-0001", "VOUCHER_1001", "SAMPLE"]), "SAL-0002");
+  assert.equal(keepPostedPayNumber("SAL-0001", "SAL-0009"), "SAL-0001");
+  const slip = calcSalarySlip({
+    kind: "salary",
+    salary_paise: rupeesToPaise(50_000),
+    pf_employee_paise: rupeesToPaise(1_800),
+    pf_company_paise: rupeesToPaise(1_800),
+    tds_paise: rupeesToPaise(500),
+    recovery_paise: 0,
+  });
+  assert.equal(slip.net_paise, rupeesToPaise(47_700));
 });

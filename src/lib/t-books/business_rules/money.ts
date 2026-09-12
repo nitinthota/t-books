@@ -27,3 +27,9 @@ export function formatRupees(rupees: number | null | undefined): string {
     minimumFractionDigits: 0,
   })}`;
 }
+
+export function formatQty(qty: number | string): string {
+  const n = typeof qty === "string" ? Number(qty) : qty;
+  if (!Number.isFinite(n)) return "—";
+  return n.toLocaleString("en-IN", { maximumFractionDigits: 3 });
+}

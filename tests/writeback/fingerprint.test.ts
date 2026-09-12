@@ -35,6 +35,10 @@ test("same voucher same fingerprint", () => {
 test("conflict copy is exact", () => {
   assert.equal(
     conflictMessage(1021),
-    "Voucher 1021 was updated by another user.\nReload and submit again.",
+    "Voucher 1021 was just updated by another user. Reload and submit again.",
+  );
+  assert.equal(
+    conflictMessage("PAY-0001"),
+    "PAY-0001 was just updated by another user. Reload and submit again.",
   );
 });

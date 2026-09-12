@@ -10,6 +10,7 @@ import {
   listHrPeople,
   saveHrPayroll,
   saveHrPerson,
+  submitOffice,
 } from "@/lib/t-books/office";
 import { invokeErrorMessage } from "@/lib/t-books/platform";
 import type { HrPerson, PayrollRow } from "@/lib/t-books/types";
@@ -25,6 +26,7 @@ type PersonDraft = {
   name: string;
   role: string;
   salary: string;
+  active: string;
 };
 
 type PayDraft = {
@@ -35,13 +37,29 @@ type PayDraft = {
   pfCompany: string;
   tds: string;
   totalPaid: string;
+  salaryNumber: string;
+  payKind: string;
+  salaryRupees: string;
+  recoveryRupees: string;
 };
 
 function blankPerson(): PersonDraft {
-  return { id: null, name: "", role: "", salary: "" };
+  return { id: null, name: "", role: "", salary: "", active: "Yes" };
 }
 function blankPay(): PayDraft {
-  return { id: null, personId: "", month: "", pfEmployee: "0", pfCompany: "0", tds: "0", totalPaid: "0" };
+  return {
+    id: null,
+    personId: "",
+    month: "",
+    pfEmployee: "0",
+    pfCompany: "0",
+    tds: "0",
+    totalPaid: "0",
+    salaryNumber: "",
+    payKind: "salary",
+    salaryRupees: "0",
+    recoveryRupees: "0",
+  };
 }
 
 export default function HrScreen({ onBack }: { onBack: () => void }) {
@@ -81,6 +99,7 @@ export default function HrScreen({ onBack }: { onBack: () => void }) {
   }, []);
 
   const persist = useCallback(async () => {
+    let slip: PayrollRow | null = null;
     if (editingPerson) {
       const salary = Number(person.salary);
       if (person.salary.trim() && !Number.isFinite(salary)) throw new Error("Salary must be a number.");
@@ -89,12 +108,14 @@ export default function HrScreen({ onBack }: { onBack: () => void }) {
         name: person.name,
         role: person.role,
         salary: Number.isFinite(salary) ? salary : 0,
+        active: person.active,
       });
       const next = {
         id: saved.id ?? null,
         name: saved.name,
         role: saved.role,
         salary: String(saved.salary ?? 0),
+        active: saved.active ?? "Yes",
       };
       setPerson(next);
       setSavedPerson(next);
@@ -105,7 +126,7 @@ export default function HrScreen({ onBack }: { onBack: () => void }) {
         if (raw.trim() && !Number.isFinite(v)) throw new Error(`${field} must be a number.`);
         return Number.isFinite(v) ? v : 0;
       };
-      const saved = await saveHrPayroll({
+      slip = await saveHrPayroll({
         id: pay.id,
         personId: Number(pay.personId),
         personName: "",
@@ -115,15 +136,22 @@ export default function HrScreen({ onBack }: { onBack: () => void }) {
         pfTotal: 0,
         tds: n(pay.tds, "TDS"),
         totalPaid: n(pay.totalPaid, "Total paid"),
+        salaryNumber: pay.salaryNumber,
+        payKind: pay.payKind,
+        salaryRupees: n(pay.salaryRupees, "Salary"),
+        recoveryRupees: n(pay.recoveryRupees, "Recovery"),
       });
-      const next = fromPay(saved);
+      const next = fromPay(slip);
       setPay(next);
       setSavedPay(next);
     }
     await reload();
+    return slip;
   }, [editingPerson, editingPay, person, pay, reload]);
 
-  useRegisterUnsaved(dirty, persist);
+  useRegisterUnsaved(dirty, async () => {
+    await persist();
+  });
 
   const pfPreview = useMemo(() => {
     const company = Number(pay.pfCompany);
@@ -143,6 +171,25 @@ export default function HrScreen({ onBack }: { onBack: () => void }) {
       setEditingPerson(false);
       setEditingPay(false);
       setError(null);
+    } catch (err) {
+      setError(invokeErrorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onSubmitSlip() {
+    setBusy(true);
+    try {
+      const saved = await persist();
+      const hiveKey = (saved?.salaryNumber || "").trim();
+      if (!hiveKey) throw new Error("Save the slip first so it has a SAL number.");
+      const out = await submitOffice("salary", hiveKey);
+      if (out.kind === "conflict") setError(out.message);
+      else {
+        setEditingPay(false);
+        setError(null);
+      }
     } catch (err) {
       setError(invokeErrorMessage(err));
     } finally {
@@ -191,6 +238,14 @@ export default function HrScreen({ onBack }: { onBack: () => void }) {
               onChange={(e) => setPerson({ ...person, salary: e.target.value })}
             />
           </div>
+          <label className="flex h-11 items-center gap-2 text-sm sm:col-span-2">
+            <input
+              type="checkbox"
+              checked={person.active !== "No"}
+              onChange={(e) => setPerson({ ...person, active: e.target.checked ? "Yes" : "No" })}
+            />
+            Active — salary required
+          </label>
         </div>
       </ModuleFrame>
     );
@@ -200,13 +255,18 @@ export default function HrScreen({ onBack }: { onBack: () => void }) {
     return (
       <ModuleFrame
         title={pay.id ? "Edit payroll" : "New payroll"}
-        hint="PF total is employee + company (calcPayroll). One row per person per month."
+        hint="Save writes this PC only. Blank number becomes SAL-0001. One salary slip per person per month."
         onBack={() => requestLeave(() => setEditingPay(false))}
         error={error}
         actions={
-          <Button onClick={() => void onSave()} disabled={busy}>
-            {busy ? "Saving…" : "Save"}
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => void onSave()} disabled={busy}>
+              {busy ? "Saving…" : "Save"}
+            </Button>
+            <Button onClick={() => void onSubmitSlip()} disabled={busy}>
+              Submit
+            </Button>
+          </div>
         }
       >
         <div className="grid gap-4 rounded-lg bg-paper-raised p-5 ring-1 ring-line sm:grid-cols-2">
@@ -234,6 +294,48 @@ export default function HrScreen({ onBack }: { onBack: () => void }) {
               type="month"
               value={pay.month}
               onChange={(e) => setPay({ ...pay, month: e.target.value })}
+            />
+          </div>
+          <div>
+            <Label htmlFor="pay-sal">SAL number</Label>
+            <Input
+              id="pay-sal"
+              className="mt-1.5"
+              placeholder="Allocated on save if blank"
+              value={pay.salaryNumber}
+              onChange={(e) => setPay({ ...pay, salaryNumber: e.target.value })}
+            />
+          </div>
+          <div>
+            <Label htmlFor="pay-kind">Kind</Label>
+            <select
+              id="pay-kind"
+              className="mt-1.5 h-11 w-full rounded-md bg-paper-raised px-3 text-base text-ink shadow-[0_0_0_1px_var(--color-line)] focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_var(--color-navy)]"
+              value={pay.payKind}
+              onChange={(e) => setPay({ ...pay, payKind: e.target.value })}
+            >
+              <option value="salary">Salary</option>
+              <option value="advance">Advance</option>
+            </select>
+          </div>
+          <div>
+            <Label htmlFor="pay-salary">Salary</Label>
+            <Input
+              id="pay-salary"
+              className="mt-1.5"
+              inputMode="decimal"
+              value={pay.salaryRupees}
+              onChange={(e) => setPay({ ...pay, salaryRupees: e.target.value })}
+            />
+          </div>
+          <div>
+            <Label htmlFor="pay-recovery">Advance recovered</Label>
+            <Input
+              id="pay-recovery"
+              className="mt-1.5"
+              inputMode="decimal"
+              value={pay.recoveryRupees}
+              onChange={(e) => setPay({ ...pay, recoveryRupees: e.target.value })}
             />
           </div>
           <div>
@@ -290,7 +392,7 @@ export default function HrScreen({ onBack }: { onBack: () => void }) {
   return (
     <ModuleFrame
       title="HR"
-      hint="People and payroll stay on this PC. Refresh from Google does not change these rows."
+      hint="People and SAL-n payroll stay on this PC until Submit. Refresh from Google does not change these rows."
       onBack={() => requestLeave(onBack)}
       error={error}
       actions={
@@ -349,6 +451,7 @@ export default function HrScreen({ onBack }: { onBack: () => void }) {
                 <TableHeadCell>Name</TableHeadCell>
                 <TableHeadCell>Role</TableHeadCell>
                 <TableHeadCell className="text-right">Salary</TableHeadCell>
+                <TableHeadCell>Active</TableHeadCell>
                 <TableHeadCell />
               </tr>
             }
@@ -357,6 +460,7 @@ export default function HrScreen({ onBack }: { onBack: () => void }) {
                 <TableCell>{row.name}</TableCell>
                 <TableCell className="text-ink-muted">{row.role || "—"}</TableCell>
                 <TableCell className="text-right tabular-nums">{formatRupees(row.salary)}</TableCell>
+                <TableCell className="text-ink-muted">{row.active === "No" ? "No" : "Yes"}</TableCell>
                 <TableCell>
                   <div className="flex justify-end gap-2">
                     <Button
@@ -368,6 +472,7 @@ export default function HrScreen({ onBack }: { onBack: () => void }) {
                           name: row.name,
                           role: row.role,
                           salary: String(row.salary ?? 0),
+                          active: row.active ?? "Yes",
                         };
                         setPerson(next);
                         setSavedPerson(next);
@@ -413,6 +518,7 @@ export default function HrScreen({ onBack }: { onBack: () => void }) {
             }
             header={
               <tr>
+                <TableHeadCell>SAL</TableHeadCell>
                 <TableHeadCell>Person</TableHeadCell>
                 <TableHeadCell>Month</TableHeadCell>
                 <TableHeadCell className="text-right">PF total</TableHeadCell>
@@ -423,6 +529,7 @@ export default function HrScreen({ onBack }: { onBack: () => void }) {
             }
             renderRow={(row) => (
               <tr className="table-row">
+                <TableCell className="font-mono">{row.salaryNumber || "—"}</TableCell>
                 <TableCell>{row.personName}</TableCell>
                 <TableCell className="text-ink-muted">{row.month}</TableCell>
                 <TableCell className="text-right tabular-nums">{formatRupees(row.pfTotal)}</TableCell>
@@ -483,5 +590,9 @@ function fromPay(row: PayrollRow): PayDraft {
     pfCompany: String(row.pfCompany ?? 0),
     tds: String(row.tds ?? 0),
     totalPaid: String(row.totalPaid ?? 0),
+    salaryNumber: row.salaryNumber ?? "",
+    payKind: row.payKind ?? "salary",
+    salaryRupees: String(row.salaryRupees ?? 0),
+    recoveryRupees: String(row.recoveryRupees ?? 0),
   };
 }

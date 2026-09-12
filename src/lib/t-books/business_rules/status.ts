@@ -8,11 +8,11 @@ export function isNaTaxInv(raw: string): boolean {
 }
 
 export function paymentStatus(invoice: number, payment: number, taxInv: string): string {
-  const out = Math.round(invoice - payment);
-  if (out < 0) return "Advance Payment";
+  const outPaise = Math.round(invoice * 100) - Math.round(payment * 100);
+  if (outPaise < 0) return "Advance Payment";
   if (!taxInv.trim()) return "Missing Tax Invoice";
-  if (payment === 0) return "Pending Payment";
-  if (out === 0) return "Full Payment";
+  if (Math.round(payment * 100) === 0) return "Pending Payment";
+  if (outPaise === 0) return "Full Payment";
   return "Partial Payment";
 }
 

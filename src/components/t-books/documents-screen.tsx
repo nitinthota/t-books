@@ -7,6 +7,7 @@ import {
   listDocuments,
   openDocument,
   saveDocument,
+  submitOffice,
 } from "@/lib/t-books/office";
 import { invokeErrorMessage, isTauriRuntime } from "@/lib/t-books/platform";
 import type { DocumentRow } from "@/lib/t-books/types";
@@ -64,9 +65,12 @@ export default function DocumentsScreen({ onBack }: { onBack: () => void }) {
     setDraft(next);
     setSaved(next);
     await reload();
+    return savedRow;
   }, [draft, reload]);
 
-  useRegisterUnsaved(dirty, persist);
+  useRegisterUnsaved(dirty, async () => {
+    await persist();
+  });
 
   async function onSave() {
     setBusy(true);
@@ -74,6 +78,24 @@ export default function DocumentsScreen({ onBack }: { onBack: () => void }) {
       await persist();
       setMode("list");
       setError(null);
+    } catch (err) {
+      setError(invokeErrorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onSubmitHive() {
+    setBusy(true);
+    try {
+      const savedRow = await persist();
+      const key = `DOC-${savedRow.id}`;
+      const out = await submitOffice("document", key);
+      if (out.kind === "conflict") setError(out.message);
+      else {
+        setMode("list");
+        setError(null);
+      }
     } catch (err) {
       setError(invokeErrorMessage(err));
     } finally {
@@ -97,13 +119,18 @@ export default function DocumentsScreen({ onBack }: { onBack: () => void }) {
     return (
       <ModuleFrame
         title={draft.id ? "Edit document" : "Attach document"}
-        hint="Only the file path is stored on this PC. T Books does not upload the file."
+        hint="Save writes the path on this PC only. Submit sends one hive row when the Documents tab exists. T Books does not upload the file."
         onBack={() => requestLeave(() => setMode("list"))}
         error={error}
         actions={
-          <Button onClick={() => void onSave()} disabled={busy}>
-            {busy ? "Saving…" : "Save"}
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => void onSave()} disabled={busy}>
+              {busy ? "Saving…" : "Save"}
+            </Button>
+            <Button onClick={() => void onSubmitHive()} disabled={busy}>
+              Submit
+            </Button>
+          </div>
         }
       >
         <div className="grid gap-4 rounded-lg bg-paper-raised p-5 ring-1 ring-line sm:grid-cols-2">

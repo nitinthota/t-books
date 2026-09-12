@@ -1,18 +1,25 @@
 import { useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
+import type { DirtyKey } from "@/lib/t-books/types";
 
 export function ConflictModal({
   voucherNumbers,
+  keys,
   busy,
   onKeepLocal,
   onDiscard,
 }: {
   voucherNumbers: number[];
+  keys?: DirtyKey[] | null;
   busy: boolean;
   onKeepLocal: () => void;
   onDiscard: () => void;
 }) {
   const keepRef = useRef<HTMLButtonElement>(null);
+  const list =
+    keys && keys.length
+      ? keys.map((k) => `${k.kind} ${k.key}`)
+      : voucherNumbers.map((n) => `voucher ${n}`);
 
   useEffect(() => {
     keepRef.current?.focus();
@@ -40,9 +47,9 @@ export function ConflictModal({
         <h2 id="conflict-title" className="text-2xl font-medium tracking-tight">
           Unsynced local changes
         </h2>
-        <p className="mt-3 text-sm text-ink-muted">You have local edits on these vouchers:</p>
+        <p className="mt-3 text-sm text-ink-muted">You have local edits on these rows:</p>
         <ul className="mt-3 max-h-48 overflow-auto rounded-md bg-paper-sunken px-3 py-2 text-sm">
-          {voucherNumbers.map((n) => (
+          {list.map((n) => (
             <li key={n} className="py-1 font-mono text-ink">
               {n}
             </li>

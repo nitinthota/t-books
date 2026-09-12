@@ -1,6 +1,7 @@
 //! `calcPo` — preview and save use this function only.
 //! Negative qty / rates are deductions, matching loopbook `po-calc.ts`.
 
+use super::hr_payroll::PayrollMoney;
 use super::money::rupees_to_paise;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -9,8 +10,9 @@ pub enum TermUnit {
     Months,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct PoItemInput {
+    pub item_name: String,
     pub description: String,
     pub qty: f64,
     pub unit_rate_rupees: f64,
@@ -19,6 +21,7 @@ pub struct PoItemInput {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PoItemCalc {
+    pub item_name: String,
     pub description: String,
     pub qty: f64,
     pub unit_rate_paise: i64,
@@ -39,13 +42,7 @@ pub struct PoSummary {
     pub balance_paise: i64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PayrollCalc {
-    pub pf_company_paise: i64,
-    pub pf_employee_paise: i64,
-    pub pf_total_paise: i64,
-    pub tds_paise: i64,
-}
+pub type PayrollCalc = PayrollMoney;
 
 pub fn clamp_pct(value: f64) -> f64 {
     let n = if value.is_finite() { value } else { 0.0 };
@@ -68,6 +65,7 @@ pub fn calc_po_item(item: &PoItemInput) -> PoItemCalc {
     let line = super::money::js_round(qty * unit as f64);
     let gst_amt = super::money::js_round((line as f64 * gst) / 100.0);
     PoItemCalc {
+        item_name: item.item_name.trim().to_string(),
         description: item.description.trim().to_string(),
         qty,
         unit_rate_paise: unit,
@@ -101,13 +99,28 @@ pub fn calc_po(
 }
 
 pub fn calc_payroll(pf_company_rupees: f64, pf_employee_rupees: f64, tds_rupees: f64) -> PayrollCalc {
+    calc_payroll_money(0.0, pf_company_rupees, pf_employee_rupees, tds_rupees)
+}
+
+/// Loopbook `calcPayroll`: salary optional (0 keeps PF-only callers compiling).
+pub fn calc_payroll_money(
+    salary_rupees: f64,
+    pf_company_rupees: f64,
+    pf_employee_rupees: f64,
+    tds_rupees: f64,
+) -> PayrollCalc {
+    let salary = rupees_to_paise(salary_rupees);
     let company = rupees_to_paise(pf_company_rupees);
     let employee = rupees_to_paise(pf_employee_rupees);
+    let tds = rupees_to_paise(tds_rupees);
     PayrollCalc {
+        salary_paise: salary,
         pf_company_paise: company,
         pf_employee_paise: employee,
         pf_total_paise: company + employee,
-        tds_paise: rupees_to_paise(tds_rupees),
+        tds_paise: tds,
+        net_paise: salary - employee - tds,
+        ctc_paise: salary + company,
     }
 }
 
@@ -133,12 +146,14 @@ mod tests {
                     qty: 2.0,
                     unit_rate_rupees: 50.0,
                     gst_pct: 18.0,
+                    ..Default::default()
                 },
                 PoItemInput {
                     description: "Skip".into(),
                     qty: 0.0,
                     unit_rate_rupees: 10.0,
                     gst_pct: 18.0,
+                    ..Default::default()
                 },
             ],
         );
@@ -164,6 +179,7 @@ mod tests {
                 qty: -1.0,
                 unit_rate_rupees: 100.0,
                 gst_pct: 18.0,
+                ..Default::default()
             }],
         );
         assert_eq!(s.grand_total_paise, -11800);
@@ -181,5 +197,12 @@ mod tests {
         let p = calc_payroll(1800.0, 1800.0, 500.0);
         assert_eq!(p.pf_total_paise, 360_000);
         assert_eq!(p.tds_paise, 50_000);
+        assert_eq!(p.salary_paise, 0);
+        assert_eq!(p.net_paise, -230_000);
+        assert_eq!(p.ctc_paise, 180_000);
+        let full = calc_payroll_money(50_000.0, 1800.0, 1800.0, 500.0);
+        assert_eq!(full.salary_paise, 5_000_000);
+        assert_eq!(full.net_paise, 5_000_000 - 180_000 - 50_000);
+        assert_eq!(full.ctc_paise, 5_000_000 + 180_000);
     }
 }
