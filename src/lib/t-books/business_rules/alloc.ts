@@ -70,3 +70,52 @@ export function allocateVoucherSerial(existingNos: string[], prefix: string): st
 export function keepPostedNumber(postedNo: string, requestedNo: string): string {
   return keepPostedPayNumber(postedNo, requestedNo);
 }
+
+/** Union of local numbers and hive keys. Dummy rows never count. */
+export function mergeKeyPool(local: string[], hive: string[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of [...local, ...hive]) {
+    const t = raw.trim();
+    if (!t || isDummySerial(t)) continue;
+    const key = t.toUpperCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(t);
+  }
+  return out;
+}
+
+export function nextPurchaseFromHiveAndLocal(local: string[], hive: string[]): string {
+  return nextPurchaseNumber(mergeKeyPool(local, hive));
+}
+
+export function nextPaymentFromHiveAndLocal(local: string[], hive: string[]): string {
+  return nextPaymentNumber(mergeKeyPool(local, hive));
+}
+
+export function nextSalaryFromHiveAndLocal(local: string[], hive: string[]): string {
+  return nextSalaryNumber(mergeKeyPool(local, hive));
+}
+
+export function allocateOrReject(
+  posted: string,
+  requested: string,
+  local: string[],
+  hive: string[],
+  kind: "purchase" | "payment" | "salary",
+): string {
+  const kept = (posted ?? "").trim();
+  if (kept) return keepPostedNumber(kept, requested);
+  const want = (requested ?? "").trim();
+  const pool = mergeKeyPool(local, hive);
+  if (!want) {
+    if (kind === "purchase") return nextPurchaseNumber(pool);
+    if (kind === "salary") return nextSalaryNumber(pool);
+    return nextPaymentNumber(pool);
+  }
+  if (pool.some((k) => k.toUpperCase() === want.toUpperCase())) {
+    throw new Error(`${want} is already used. Reload and submit again.`);
+  }
+  return want;
+}

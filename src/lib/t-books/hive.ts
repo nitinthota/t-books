@@ -4,6 +4,7 @@ export const KIND_VOUCHER = "voucher";
 export const KIND_PURCHASE = "purchase";
 export const KIND_PAYMENT = "payment";
 export const KIND_SALARY = "salary";
+export const KIND_SALES_PO = "sales_po";
 export const KIND_ACCESS = "access";
 
 export type DirtyKey = { kind: string; key: string };
@@ -22,6 +23,10 @@ export type CasOutcome =
 
 export function hiveConflictMessage(key: string): string {
   return `${key} was just updated by another user. Reload and submit again.`;
+}
+
+export function salesPoHiveKey(poNumber: string, project: string): string {
+  return `${poNumber.trim()}@${project.trim()}`;
 }
 
 type Tab = { headers: string[]; rows: HiveRow[] };

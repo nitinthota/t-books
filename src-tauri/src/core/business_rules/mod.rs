@@ -15,8 +15,10 @@ pub mod rbac;
 pub mod status;
 
 pub use alloc::{
-    allocate_voucher_serial, keep_posted_number, next_converted_po_number, next_payment_number,
-    next_project_expense_number, next_purchase_number, next_salary_number,
+    allocate_or_reject, allocate_voucher_serial, keep_posted_number, merge_key_pool,
+    next_converted_po_number, next_payment_from_hive_and_local, next_payment_number,
+    next_project_expense_number, next_purchase_from_hive_and_local, next_purchase_number,
+    next_salary_from_hive_and_local, next_salary_number,
 };
 pub use calc_po::{
     calc_payroll, calc_payroll_money, calc_po, calc_po_item, clamp_pct, payment_term_days,
