@@ -109,6 +109,10 @@ export type PaymentView = {
   remaining: number;
   paymentDate: string;
   remarks: string;
+  description?: string;
+  tds?: number;
+  paymentDetails?: string;
+  paymentPercent?: number;
 };
 
 export type VoucherView = {
@@ -123,6 +127,29 @@ export type VoucherView = {
   remaining: number;
   status: string;
   isDirty: boolean;
+  payments: PaymentView[];
+  voucherDate?: string;
+  bank?: string;
+  accountNumber?: string;
+  ifsc?: string;
+  description?: string;
+  voucherType?: string;
+  taxFlag?: string;
+};
+
+export type VoucherSave = {
+  voucherNumber: number;
+  voucherDate?: string;
+  taxInvoice?: string;
+  vendor: string;
+  bank?: string;
+  accountNumber?: string;
+  ifsc?: string;
+  gst?: string;
+  project?: string;
+  comments?: string;
+  description?: string;
+  voucherType?: string;
   payments: PaymentView[];
 };
 
