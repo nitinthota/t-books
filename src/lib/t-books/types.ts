@@ -170,6 +170,8 @@ export type PoPreview = {
   grandTotal: number;
 };
 
+export type SalesPoKind = "contract" | "project";
+
 export type SalesPo = {
   id: number;
   project: string;
@@ -179,6 +181,11 @@ export type SalesPo = {
   totalValue: number;
   createdAt: string;
   updatedAt: string;
+  kind?: SalesPoKind | string;
+  receivedRupees?: number;
+  paymentTermValue?: number;
+  paymentTermUnit?: "days" | "months" | string;
+  isDirty?: boolean;
   items: PoItemIn[];
 };
 
@@ -189,6 +196,10 @@ export type SalesPoSave = {
   client: string;
   gst: string;
   items: PoItemIn[];
+  kind?: SalesPoKind | string;
+  receivedRupees?: number;
+  paymentTermValue?: number;
+  paymentTermUnit?: "days" | "months" | string;
 };
 
 export type PurchaseType = "contract" | "simple";

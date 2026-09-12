@@ -96,8 +96,11 @@ export {
 
 export {
   allocMethodForPurchase,
+  allocMethodLabel,
   classifyPurchasePayment,
+  deleteReasonOk,
   formatPaymentNumber,
+  isBlankPoItem,
   isChildPayNumber,
   isLegacyPayNumber,
   isPayVoucherNumber,
@@ -105,6 +108,7 @@ export {
   parsePayVoucherSeq,
   paymentMatchesFilters,
   paymentOverTotal,
+  poListMoney,
   purchasePayStatus,
   shouldPostPurchaseBill,
   taxInvoiceMissing,
