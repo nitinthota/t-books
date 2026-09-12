@@ -16,6 +16,11 @@ export function fyBounds(fy: string): { start: string; end: string } {
   return { start: `${startYear}-04-01`, end: `${endYear}-03-31` };
 }
 
+/** Loopbook name lock — same as fyBounds. */
+export function fyRange(fy: string): { start: string; end: string } {
+  return fyBounds(fy);
+}
+
 export function fyOptions(minDate: string | null, maxDate: string | null, today = new Date()): string[] {
   const years = new Set<number>();
   const pushDate = (iso: string | null) => {
