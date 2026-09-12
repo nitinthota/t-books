@@ -6,12 +6,17 @@
 export const LOOPBOOK_LOGIC_VERSION = "v1";
 
 export {
+  allocateOrReject,
   allocateVoucherSerial,
   keepPostedNumber,
+  mergeKeyPool,
   nextConvertedPoNumber,
+  nextPaymentFromHiveAndLocal,
   nextPaymentNumber,
   nextProjectExpenseNumber,
+  nextPurchaseFromHiveAndLocal,
   nextPurchaseNumber,
+  nextSalaryFromHiveAndLocal,
   nextSalaryNumber,
 } from "./alloc.ts";
 
@@ -99,7 +104,9 @@ export {
   normalizeAllocMethod,
   parsePayVoucherSeq,
   paymentMatchesFilters,
+  paymentOverTotal,
   purchasePayStatus,
+  shouldPostPurchaseBill,
   taxInvoiceMissing,
   type AllocMethod,
   type PaymentClass,

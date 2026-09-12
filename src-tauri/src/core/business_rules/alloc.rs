@@ -96,6 +96,62 @@ pub fn keep_posted_number(posted_no: &str, requested_no: &str) -> String {
     keep_posted_pay_number(posted_no, requested_no)
 }
 
+/// Union of local numbers and hive keys. Dummy rows never count.
+pub fn merge_key_pool(local: &[String], hive: &[String]) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+    for raw in local.iter().chain(hive.iter()) {
+        let t = raw.trim();
+        if t.is_empty() || is_dummy_serial(t) {
+            continue;
+        }
+        if seen.insert(t.to_ascii_uppercase()) {
+            out.push(t.to_string());
+        }
+    }
+    out
+}
+
+pub fn next_purchase_from_hive_and_local(local: &[String], hive: &[String]) -> String {
+    next_purchase_number(&merge_key_pool(local, hive))
+}
+
+pub fn next_payment_from_hive_and_local(local: &[String], hive: &[String]) -> String {
+    next_payment_number(&merge_key_pool(local, hive), None)
+}
+
+pub fn next_salary_from_hive_and_local(local: &[String], hive: &[String]) -> String {
+    next_salary_number(&merge_key_pool(local, hive))
+}
+
+/// Empty requested → allocate from hive+local. Taken number → Err so Submit can bump.
+pub fn allocate_or_reject(
+    posted: &str,
+    requested: &str,
+    local: &[String],
+    hive: &[String],
+    kind: &str,
+) -> std::result::Result<String, String> {
+    let posted = posted.trim();
+    if !posted.is_empty() {
+        return Ok(keep_posted_number(posted, requested));
+    }
+    let want = requested.trim().to_string();
+    let pool = merge_key_pool(local, hive);
+    if want.is_empty() {
+        let next = match kind {
+            "purchase" => next_purchase_number(&pool),
+            "salary" => next_salary_number(&pool),
+            _ => next_payment_number(&pool, None),
+        };
+        return Ok(next);
+    }
+    if pool.iter().any(|k| k.eq_ignore_ascii_case(&want)) {
+        return Err(format!("{want} is already used. Reload and submit again."));
+    }
+    Ok(want)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -130,5 +186,22 @@ mod tests {
     #[test]
     fn posted_number_is_not_stolen() {
         assert_eq!(keep_posted_number("PAY-0001", "PAY-0099"), "PAY-0001");
+    }
+
+    #[test]
+    fn hive_plus_local_bumps_taken_pay() {
+        let local = vec!["PAY-0001".into(), "VOUCHER_1001".into()];
+        let hive = vec!["PAY-0002".into(), "CUST_01".into()];
+        assert_eq!(next_payment_from_hive_and_local(&local, &hive), "PAY-0003");
+        let err = allocate_or_reject("", "PAY-0002", &local, &hive, "payment").unwrap_err();
+        assert!(err.contains("already used"));
+        assert_eq!(
+            allocate_or_reject("PAY-0001", "PAY-0099", &local, &hive, "payment").unwrap(),
+            "PAY-0001"
+        );
+        assert_eq!(
+            next_purchase_from_hive_and_local(&["PUR-0001".into()], &["PURC:0004".into()]),
+            "PUR-0005"
+        );
     }
 }
