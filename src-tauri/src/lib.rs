@@ -157,6 +157,7 @@ mod desktop {
     use crate::online::is_online;
     use crate::sheets::credentials_exist;
     use std::sync::Mutex;
+    use tauri::Manager;
 
     struct AppState {
         books: Mutex<LocalBooks>,

@@ -66,6 +66,7 @@ test("Windows NSIS packaging is per-user T Books with no updater bundle", () => 
   assert.match(workflow, /windows-latest/);
   assert.match(workflow, /npm run tauri:build/);
   assert.match(workflow, /dist\/installers\/T-Books-Setup\.exe/);
+  assert.match(rustLib, /use tauri::Manager;/);
 });
 
 test("dummy tokens and invalid A stay out of books", () => {
