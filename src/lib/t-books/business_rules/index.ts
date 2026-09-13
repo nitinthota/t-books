@@ -39,13 +39,14 @@ export {
   type PoItemInput,
   type PoSummary,
   type TermUnit,
-} from "./calc-po.ts";
+} from "./po-calc.ts";
 
 export {
   clampAsOf,
   currentIndianFy,
   fyBounds,
   fyOptions,
+  fyRange,
   signedDrCr,
   trialBalanced,
   trialClosing,
@@ -99,15 +100,19 @@ export {
   allocMethodLabel,
   classifyPurchasePayment,
   deleteReasonOk,
+  formatBankLabel,
   formatPaymentNumber,
   isBlankPoItem,
   isChildPayNumber,
+  isHttpUrl,
   isLegacyPayNumber,
   isPayVoucherNumber,
+  mergeBlockedReason,
   normalizeAllocMethod,
   parsePayVoucherSeq,
   paymentMatchesFilters,
   paymentOverTotal,
+  pickDefaultMergeTarget,
   poListMoney,
   purchasePayStatus,
   shouldPostPurchaseBill,
@@ -136,3 +141,11 @@ export {
   type StatusTone,
   type TaxFlag,
 } from "./status.ts";
+
+export {
+  allocateVoucherSerial as allocateVoucherSerialFromSheet,
+  countSheetPaymentLines,
+  headerMoneyFromLines,
+  parseVoucherDataWorkbook,
+  VOUCHER_RAW_SHEET_NAME,
+} from "./voucher-data.ts";

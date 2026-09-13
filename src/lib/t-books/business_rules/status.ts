@@ -1,31 +1,11 @@
-/** Status from amounts. Port of loopbook paymentStatus / taxFlagFor. */
+/** Status from amounts. One source: voucher-data.ts (Loopbook file name). */
 
-export type TaxFlag = "missing" | "na_needs_comment" | "na_ok" | "ok";
+export {
+  isNaTaxInv,
+  paymentStatus,
+  statusTone,
+  taxFlagFor,
+  type TaxFlag,
+} from "./voucher-data.ts";
+
 export type StatusTone = "credit" | "debit" | "muted";
-
-export function isNaTaxInv(raw: string): boolean {
-  return /^(na|n\/a)$/i.test(raw.trim());
-}
-
-export function paymentStatus(invoice: number, payment: number, taxInv: string): string {
-  const outPaise = Math.round(invoice * 100) - Math.round(payment * 100);
-  if (outPaise < 0) return "Advance Payment";
-  if (!taxInv.trim()) return "Missing Tax Invoice";
-  if (Math.round(payment * 100) === 0) return "Pending Payment";
-  if (outPaise === 0) return "Full Payment";
-  return "Partial Payment";
-}
-
-export function taxFlagFor(taxInv: string, comments: string): TaxFlag {
-  const t = taxInv.trim();
-  if (!t) return "missing";
-  if (isNaTaxInv(t)) return comments.trim() ? "na_ok" : "na_needs_comment";
-  return "ok";
-}
-
-export function statusTone(status: string): StatusTone {
-  const s = status.toLowerCase();
-  if (s.includes("full") || s.includes("advance")) return "credit";
-  if (s.includes("pending") || s.includes("missing") || s.includes("partial")) return "debit";
-  return "muted";
-}
