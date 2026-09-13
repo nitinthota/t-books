@@ -91,13 +91,18 @@ Already in `hive.rs`, `submit.rs`, `writeback.rs`, `office_sync.rs`: CAS match, 
 
 ## Pass / fail log
 
-Fill after a run (counts, not cell contents):
+Recorded on this branch after the suites below. Dummy tokens only. No live Google **writes**. Live Google **READ** of `Voucher_Raw_Data` was **skipped** (no `TBOOKS_GOOGLE_SA_JSON` / credentials.json).
 
 | Suite | Result |
 |---|---|
-| `cargo test --lib` | _pending_ |
-| `cargo test --tests` | _pending_ |
-| Node unit tests | _pending_ |
-| Live Google READ raw | skipped unless SA present; **never write** |
+| `rustup run 1.88.0 cargo test --locked --lib` | **pass** 125 / 0 fail |
+| Integration (functional, data_corruption, stress, multi_user, recovery, writeback, invalid_data, release_matrix) | **pass** 51 / 0 fail |
+| Endurance + load cargo tests | skipped (time cap) |
+| `t-books-stress` / `t-books-endurance` bins | skipped (time cap); bounded 2k-voucher stress test passed |
+| Node: hive-plan, modules, rbac, release, business_rules, vouchers | **pass** 36 / 0 fail |
+| Live Google READ raw | **skipped** — no service account in this environment |
+| Live Google write (including raw) | **not run** |
+
+Optional: set `TBOOKS_LIVE_GOOGLE=1` plus a service account to require the raw READ. Never write `Voucher_Raw_Data`.
 
 Do not paste GST, bank, amounts, or real names into this file from a live sheet.

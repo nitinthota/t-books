@@ -431,6 +431,7 @@ fn migrate(conn: &Connection) -> Result<()> {
     ensure_column(conn, "logistics", "source_hash", "TEXT")?;
     ensure_column(conn, "documents", "is_dirty", "INTEGER NOT NULL DEFAULT 0")?;
     ensure_column(conn, "documents", "hive_rev", "INTEGER NOT NULL DEFAULT 0")?;
+    ensure_column(conn, "documents", "source_hash", "TEXT")?;
     ensure_column(conn, "access_cache", "account_type", "TEXT")?;
     conn.execute(
         "UPDATE vouchers SET is_dirty = 1 WHERE COALESCE(dirty, 0) = 1 AND COALESCE(is_dirty, 0) = 0",
