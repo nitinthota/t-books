@@ -52,6 +52,8 @@ test("Windows NSIS packaging is per-user T Books with no updater bundle", () => 
   assert.match(cargo, /version = "1.0.0"/);
   assert.match(cargo, /default-run = "t-books"/);
   assert.match(hooks, /leave %LOCALAPPDATA%\\T-Books/);
+  assert.match(hooks, /LinkId=2124703/);
+  assert.match(hooks, /TBooksWebView2Setup/);
   assert.doesNotMatch(hooks, /RMDir.*T-Books/i);
   assert.match(ignore, /credentials\.json/);
   assert.match(ignore, /\*\.pem/);

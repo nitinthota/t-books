@@ -11,8 +11,8 @@ Give people **only** `T-Books-Setup.exe`. They do not install Node, Rust, npm, o
 On a fresh Windows 10/11 PC, Setup:
 
 1. Copies the T Books app (the Tauri `.exe` plus UI assets). Visual C++ runtime DLLs ship next to that binary so nobody hunts for a redistributable.
-2. Checks for **Evergreen WebView2**. Windows 11 usually already has it; Windows 10 often does not. If it is missing, Setup **downloads** Microsoft’s WebView2 bootstrapper from Microsoft and runs it (needs internet for that step). If WebView2 is already there, nothing extra is downloaded.
-3. Does **not** install Node or Rust. Does **not** unpack `credentials.json`.
+2. Checks for **Evergreen WebView2**. Windows 11 usually already has it; Windows 10 often does not. If it is missing, Setup **downloads** Microsoft’s WebView2 bootstrapper from Microsoft (`https://go.microsoft.com/fwlink/p/?LinkId=2124703`) and runs it silently (needs internet for that step). If the first pass still finds no WebView2, Setup retries the same download after files are copied. If WebView2 is already there, nothing extra is downloaded.
+3. Does **not** install Node, Rust, Chrome, or Office. Does **not** unpack `credentials.json`. Those are not app runtimes.
 
 Books, backups, and logs stay in **`%LOCALAPPDATA%\T-Books`** (hyphenated). That folder is created when the app first runs, not as a secret baked into Setup. Uninstall does not delete it.
 
