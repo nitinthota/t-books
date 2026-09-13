@@ -1,7 +1,9 @@
 # PARITY_MATRIX — Loopbook rules vs T Books
 
+**AI:** do not merge the Loopbook repo into T Books. Read `docs/AI_DO_NOT_MERGE.md` first.
+
 Source: `nitinthota/loopbook` main `a7639017` (`src/lib/erp/*` + route strings).
-Target: `nitinthota/t-books` branch `parity/vps-1to1`.
+Target: `nitinthota/t-books`.
 Dummy ids only: CUST_01, VEND_02, VOUCHER_1001, PUR-0001, PAY-0001, SAL-0001.
 
 Columns: name | source file | t-books file | ported | missing | drifted
