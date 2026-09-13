@@ -121,6 +121,7 @@ export async function openLocalBooks(): Promise<void> {
   const appVer = appVersionSql();
   db.run(appVer.sql, appVer.params);
   db.run(`INSERT OR IGNORE INTO app_meta (key, value) VALUES ('auto_backup', 'yes')`);
+  seedDefaultRules();
   await persistNow();
 }
 
@@ -145,6 +146,25 @@ function migrateOfficeColumns(): void {
     const names = new Set(info.map((row) => String(row.name)));
     if (names.has(col.name)) continue;
     getDb().run(`ALTER TABLE ${col.table} ADD COLUMN ${col.name} ${col.decl}`);
+  }
+}
+
+const DEFAULT_RULES: Array<[string, string, string, string, number]> = [
+  ["ledger-purchase", "Post vendor bills to ledger", "purchase", "ledger", 1],
+  ["ledger-payment", "Post vendor payments to bank", "payment", "bank", 2],
+  ["project-cost", "Add bill value to project cost", "purchase", "project_cost", 3],
+  ["stock-inventory", "Move stock when inventory posts", "inventory", "stock", 4],
+  ["ledger-salary", "Post salary to payroll ledger", "salary", "ledger", 5],
+  ["ledger-sale", "Post sales PO received to ledger", "sale", "ledger", 6],
+];
+
+function seedDefaultRules(): void {
+  for (const [id, name, whenType, thenAction, sort] of DEFAULT_RULES) {
+    getDb().run(
+      `INSERT OR IGNORE INTO rules (id, name, when_type, then_action, enabled, sort_order)
+       VALUES (?, ?, ?, ?, 1, ?)`,
+      [id, name, whenType, thenAction, sort],
+    );
   }
 }
 
@@ -233,5 +253,6 @@ export async function replaceFromBytes(bytes: Uint8Array): Promise<void> {
   const appVer = appVersionSql();
   db.run(appVer.sql, appVer.params);
   db.run(`INSERT OR IGNORE INTO app_meta (key, value) VALUES ('auto_backup', 'yes')`);
+  seedDefaultRules();
   await persistNow();
 }

@@ -1,5 +1,6 @@
 mod access;
 mod auth;
+mod control;
 pub mod core;
 mod db;
 mod hive;
@@ -21,12 +22,17 @@ pub use access::{
     AppStatus,
 };
 pub use auth::{inspect_email, set_first_password, sign_in};
+pub use control::{
+    explore_table, list_duplicates, list_rules, merge_master, toggle_rule, DuplicateGroup,
+    DuplicateSerial, DuplicatesReport, RuleRow, EXPLORER_TABLES,
+};
 pub use core::business_rules;
 pub use db::{data_dir, db_path, open_at, open_db, open_memory, LocalBooks};
 pub use hive::{
     hive_conflict_message, list_dirty_keys, list_pending, submit_hive_row, tab_headers, tab_name,
     CasOutcome, DirtyKey, Hive, MemoryHive, PendingSubmit, KIND_ACCESS, KIND_DOCUMENT,
-    KIND_INVENTORY, KIND_LOGISTICS, KIND_PAYMENT, KIND_PURCHASE, KIND_SALARY, KIND_VOUCHER,
+    KIND_INVENTORY, KIND_LOGISTICS, KIND_PAYMENT, KIND_PURCHASE, KIND_SALARY, KIND_SALES_PO,
+    KIND_VOUCHER, HIVE_KINDS,
 };
 pub use log::{
     apply_debug_flag, clear_logs, error_log_path, event as log_event, is_debug,
@@ -44,7 +50,7 @@ pub use office::{
     PurchasePayment, PurchasePaymentSave, PurchasePo, PurchasePoSave, SalesPo, SalesPoSave,
     SearchHit, VendorRef,
 };
-pub use office_sync::{submit_office, submit_office_with};
+pub use office_sync::{bootstrap_hive_tab, hive_status, submit_office, submit_office_with, HiveStatus, HiveTabStatus};
 pub use trial::{available_fy, build_trial, TrialBalance, TrialLine};
 pub use passwords::{hash_password, validate_new_password, verify_password};
 pub use submit::{
@@ -71,7 +77,7 @@ pub const OFFLINE_BANNER: &str =
     "Offline — working on this PC. Access list and Refresh paused.";
 pub const CREDENTIALS_BANNER: &str = "Google credentials not found. Running offline.";
 pub const MIN_PASSWORD_LENGTH: usize = 8;
-pub const SCHEMA_VERSION: &str = "8";
+pub const SCHEMA_VERSION: &str = "9";
 pub const LOOPBOOK_LOGIC_VERSION: &str = business_rules::LOOPBOOK_LOGIC_VERSION;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
@@ -852,6 +858,100 @@ mod desktop {
         crate::access::write_access_row(&mut books, payload).map_err(map_err)
     }
 
+    #[tauri::command]
+    fn list_duplicates(
+        state: tauri::State<AppState>,
+    ) -> std::result::Result<DuplicatesReport, String> {
+        let books = state.books.lock().expect("local books");
+        crate::control::list_duplicates(&books).map_err(map_err)
+    }
+
+    #[tauri::command]
+    fn merge_master(
+        state: tauri::State<AppState>,
+        kind: String,
+        keep_id: String,
+        absorb_ids: Vec<String>,
+    ) -> std::result::Result<i64, String> {
+        require_mutate(&state)?;
+        let books = state.books.lock().expect("local books");
+        crate::control::merge_master(&books, &kind, &keep_id, &absorb_ids).map_err(map_err)
+    }
+
+    #[tauri::command]
+    fn explore_table(
+        state: tauri::State<AppState>,
+        table: String,
+    ) -> std::result::Result<Vec<std::collections::BTreeMap<String, String>>, String> {
+        let books = state.books.lock().expect("local books");
+        crate::control::explore_table(&books, &table).map_err(map_err)
+    }
+
+    #[tauri::command]
+    fn list_rules(state: tauri::State<AppState>) -> std::result::Result<Vec<RuleRow>, String> {
+        let books = state.books.lock().expect("local books");
+        crate::control::list_rules(&books).map_err(map_err)
+    }
+
+    #[tauri::command]
+    fn toggle_rule(
+        state: tauri::State<AppState>,
+        id: String,
+        enabled: bool,
+    ) -> std::result::Result<RuleRow, String> {
+        require_mutate(&state)?;
+        let books = state.books.lock().expect("local books");
+        crate::control::toggle_rule(&books, &id, enabled).map_err(map_err)
+    }
+
+    #[tauri::command]
+    fn hive_status() -> HiveStatus {
+        crate::office_sync::hive_status()
+    }
+
+    #[tauri::command]
+    fn bootstrap_hive_tab(
+        state: tauri::State<AppState>,
+        kind: String,
+    ) -> std::result::Result<String, String> {
+        require_owner(&state)?;
+        crate::office_sync::bootstrap_hive_tab(&kind).map_err(map_err)
+    }
+
+    #[tauri::command]
+    fn retry_pending_submit(
+        state: tauri::State<AppState>,
+        kind: String,
+        key: String,
+    ) -> std::result::Result<CasOutcome, String> {
+        require_submit_role(&state)?;
+        let allow = state
+            .session
+            .lock()
+            .expect("session")
+            .as_ref()
+            .map(|s| s.role == "owner" || crate::is_hardcoded_owner(&s.email))
+            .unwrap_or(false);
+        let mut books = state.books.lock().expect("local books");
+        if kind == crate::KIND_VOUCHER {
+            let n = crate::business_rules::parse_voucher_number(&key)
+                .ok_or_else(|| "Voucher number must be a whole integer.".to_string())?;
+            match crate::submit_voucher(&mut books, n).map_err(map_err)? {
+                crate::SubmitOutcome::Ok { voucher_number } => Ok(CasOutcome::Ok {
+                    key: voucher_number.to_string(),
+                    fp: String::new(),
+                    rev: 0,
+                }),
+                crate::SubmitOutcome::Conflict { voucher_number, message } => Ok(CasOutcome::Conflict {
+                    key: voucher_number.to_string(),
+                    message,
+                }),
+            }
+        } else {
+            crate::office_sync::submit_office(&books, &kind, &key, allow).map_err(map_err)
+        }
+    }
+
     pub fn run() {
         let books = open_db().expect("open T Books SQLite");
         tauri::Builder::default()
@@ -913,6 +1013,14 @@ mod desktop {
                 get_trial,
                 list_fy,
                 write_access_row,
+                list_duplicates,
+                merge_master,
+                explore_table,
+                list_rules,
+                toggle_rule,
+                hive_status,
+                bootstrap_hive_tab,
+                retry_pending_submit,
                 list_hr_people,
                 save_hr_person,
                 delete_hr_person,

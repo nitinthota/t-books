@@ -33,8 +33,8 @@ export default function TrialScreen({ onBack }: { onBack: () => void }) {
 
   return (
     <ModuleFrame
-      title="Trial"
-      hint="Indian financial year 1 Apr–31 Mar. Built from this PC only."
+      title="Finance"
+      hint="Trial balance from posted books on this PC. Indian financial year 1 Apr–31 Mar. Debits must equal credits."
       onBack={onBack}
       error={error}
     >

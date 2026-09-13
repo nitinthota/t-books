@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import {
+  bootstrapHiveTab,
+  hiveStatus,
+  listPendingSubmit,
+  retryPendingSubmit,
+  type HiveStatus,
+} from "@/lib/t-books/control";
 import { invokeErrorMessage } from "@/lib/t-books/platform";
+import { canOpenAccess } from "@/lib/t-books/rbac";
+import { useBooks } from "@/lib/t-books/store";
+import type { PendingSubmit } from "@/lib/t-books/types";
 import {
   backupData,
   checkForUpdates,
@@ -26,11 +36,22 @@ export default function SettingsScreen({ onBack }: { onBack: () => void }) {
   const [restorePath, setRestorePath] = useState<string>("");
   const [restoreFile, setRestoreFile] = useState<File | null>(null);
   const [update, setUpdate] = useState<UpdateInfo | null>(null);
+  const [hive, setHive] = useState<HiveStatus | null>(null);
+  const [pending, setPending] = useState<PendingSubmit[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
+  const session = useBooks((s) => s.session);
+  const owner = session ? canOpenAccess(session.role) : false;
 
   const load = useCallback(async () => {
     try {
       setInfo(await getOpsInfo());
+      try {
+        setHive(await hiveStatus());
+        setPending(await listPendingSubmit());
+      } catch {
+        setHive(null);
+        setPending([]);
+      }
       setError(null);
     } catch (err) {
       setError(invokeErrorMessage(err));
@@ -74,10 +95,89 @@ export default function SettingsScreen({ onBack }: { onBack: () => void }) {
   }
 
   return (
-    <ModuleFrame title="Settings" hint="This PC only. Uninstall never deletes these books." onBack={onBack} error={error}>
+    <ModuleFrame title="System" hint="Who is signed in on this PC, hive tabs on Google, and data controls." onBack={onBack} error={error}>
+      <section className="mb-8 rounded-lg bg-paper-raised p-4 ring-1 ring-line">
+        <h2 className="text-lg font-medium">Signed-in operator</h2>
+        <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+          <Meta label="Email" value={session?.email ?? "—"} />
+          <Meta label="Role" value={session?.role ?? "—"} />
+          <Meta label="Version" value={info?.version ?? "…"} />
+          <Meta label="Data folder" value={info?.dataDir ?? "…"} />
+        </dl>
+      </section>
+
+      <section className="mb-8 rounded-lg bg-paper-raised p-4 ring-1 ring-line">
+        <h2 className="text-lg font-medium">Windows hive</h2>
+        <p className="mt-1 text-sm text-ink-muted">
+          Views never call Google. Submit writes one hive row. Owner can create missing tabs (headers only).
+        </p>
+        <p className="mt-2 text-xs text-ink-subtle">
+          {hive
+            ? hive.online
+              ? hive.credentialsFound
+                ? "This PC can reach Google."
+                : "Google credentials not found. Running offline."
+              : "Offline — hive inspect paused."
+            : "Hive status loads on this PC."}
+        </p>
+        <ul className="mt-3 divide-y divide-line text-sm">
+          {(hive?.tabs ?? []).map((tab) => (
+            <li key={tab.kind} className="flex flex-wrap items-center justify-between gap-2 py-2">
+              <span>
+                {tab.tab}
+                <span className="ml-2 text-xs text-ink-subtle">
+                  {tab.present ? `${tab.rowCount} rows` : "missing"}
+                  {tab.error ? ` · ${tab.error}` : ""}
+                </span>
+              </span>
+              {owner && !tab.present ? (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={busy}
+                  onClick={() => void run(() => bootstrapHiveTab(tab.kind), `${tab.tab} ready.`)}
+                >
+                  Create headers
+                </Button>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+        {pending.length > 0 ? (
+          <div className="mt-4">
+            <p className="text-sm font-medium">Outbox</p>
+            <ul className="mt-2 space-y-2 text-sm">
+              {pending.map((row) => (
+                <li key={`${row.kind}:${row.key}`} className="flex items-center justify-between gap-2">
+                  <span className="font-mono text-xs">
+                    {row.kind} {row.key}
+                    {row.lastError ? ` · ${row.lastError}` : ""}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={busy}
+                    onClick={() =>
+                      void run(async () => {
+                        const out = await retryPendingSubmit(row.kind, row.key);
+                        if (out.kind === "conflict") {
+                          throw new Error(out.message);
+                        }
+                      }, "Submitted to Google.")
+                    }
+                  >
+                    Retry
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : (
+          <p className="mt-3 text-sm text-ink-muted">No pending hive writes on this PC.</p>
+        )}
+      </section>
+
       <dl className="grid gap-4 text-sm sm:grid-cols-2">
-        <Meta label="Version" value={info?.version ?? "…"} />
-        <Meta label="Data folder" value={info?.dataDir ?? "…"} />
         <Meta label="Debug logs" value={info?.debug ? "On (--debug)" : "Off"} />
         <Meta label="Auto backup" value={info?.autoBackup ? "On close, last 5" : "Off"} />
       </dl>

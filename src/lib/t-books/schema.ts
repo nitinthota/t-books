@@ -138,6 +138,15 @@ CREATE TABLE IF NOT EXISTS purchase_payments (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_purchase_payments_number
   ON purchase_payments(pay_number COLLATE NOCASE);
 CREATE INDEX IF NOT EXISTS idx_purchase_payments_po ON purchase_payments(po_number);
+
+CREATE TABLE IF NOT EXISTS rules (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  when_type TEXT NOT NULL,
+  then_action TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  sort_order INTEGER NOT NULL DEFAULT 0
+);
 `;
 
 export const SCHEMA_SQL = `
@@ -284,6 +293,9 @@ export const OFFICE_COLUMN_MIGRATIONS: Array<{ table: string; name: string; decl
   { table: "purchase_po", name: "is_dirty", decl: "INTEGER NOT NULL DEFAULT 0" },
   { table: "purchase_po", name: "hive_rev", decl: "INTEGER NOT NULL DEFAULT 0" },
   { table: "purchase_po", name: "source_hash", decl: "TEXT" },
+  { table: "sales_po", name: "is_dirty", decl: "INTEGER NOT NULL DEFAULT 0" },
+  { table: "sales_po", name: "hive_rev", decl: "INTEGER NOT NULL DEFAULT 0" },
+  { table: "sales_po", name: "source_hash", decl: "TEXT" },
   { table: "hr_people", name: "active", decl: "TEXT NOT NULL DEFAULT 'Yes'" },
   { table: "hr_payroll", name: "salary_number", decl: "TEXT" },
   { table: "hr_payroll", name: "pay_kind", decl: "TEXT NOT NULL DEFAULT 'salary'" },

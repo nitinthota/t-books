@@ -160,5 +160,5 @@ Access **write** (owner add/disable one row): **no Tauri command.** Gap.
 
 Dummy tokens only: `CUST_01`, `VEND_02`, `VOUCHER_1001`, `PUR-0001`, `PAY-0001`, `SAL-0001`.
 
-Schema version **8**. `LOOPBOOK_LOGIC_VERSION` stays `"v1"`.
+Schema version **9**. `LOOPBOOK_LOGIC_VERSION` stays `"v1"`.
 

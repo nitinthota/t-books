@@ -19,6 +19,9 @@ const TrialScreen = lazy(() => import("./trial-screen"));
 const InventoryScreen = lazy(() => import("./inventory-screen"));
 const LogisticsScreen = lazy(() => import("./logistics-screen"));
 const DocumentsScreen = lazy(() => import("./documents-screen"));
+const DuplicatesScreen = lazy(() => import("./duplicates-screen"));
+const ExplorerScreen = lazy(() => import("./explorer-screen"));
+const RulesScreen = lazy(() => import("./rules-screen"));
 const SettingsScreen = lazy(() => import("./settings-screen"));
 const AccessScreen = lazy(() =>
   import("./access-screen").then((m) => ({ default: m.AccessScreen })),
@@ -80,7 +83,7 @@ function BoardShellInner() {
               <PurchaseScreen onBack={() => go("board")} focusId={focusId} />
             ) : active === "hr" ? (
               <HrScreen onBack={() => go("board")} />
-            ) : active === "trial" ? (
+            ) : active === "finance" ? (
               <TrialScreen onBack={() => go("board")} />
             ) : active === "inventory" ? (
               <InventoryScreen onBack={() => go("board")} focusId={focusId} />
@@ -88,7 +91,13 @@ function BoardShellInner() {
               <LogisticsScreen onBack={() => go("board")} focusId={focusId} />
             ) : active === "documents" ? (
               <DocumentsScreen onBack={() => go("board")} />
-            ) : active === "settings" ? (
+            ) : active === "duplicates" ? (
+              <DuplicatesScreen onBack={() => go("board")} />
+            ) : active === "explorer" ? (
+              <ExplorerScreen onBack={() => go("board")} />
+            ) : active === "rules" ? (
+              <RulesScreen onBack={() => go("board")} />
+            ) : active === "system" ? (
               <SettingsScreen onBack={() => go("board")} />
             ) : active === "access" ? (
               <AccessScreen onBack={() => go("board")} />

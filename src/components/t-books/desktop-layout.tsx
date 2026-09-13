@@ -1,22 +1,25 @@
-import { memo, type ReactNode } from "react";
 import {
-  BookOpen,
+  Banknote,
   Boxes,
-  Building2,
+  Briefcase,
+  Copy,
   FileText,
   FolderKanban,
   LayoutDashboard,
   LogOut,
-  Package,
+  Paperclip,
   RefreshCw,
   Scale,
+  Search,
   Settings,
   ShoppingCart,
   Truck,
   Users,
-  KeyRound,
+  Wallet,
 } from "lucide-react";
+import { memo, type ReactNode } from "react";
 import { APP_NAME, APP_VERSION } from "@/lib/t-books/constants";
+import { LOOPBOOK_NAV } from "@/lib/t-books/modules";
 import { canOpenAccess, canRefresh } from "@/lib/t-books/rbac";
 import { useBooks } from "@/lib/t-books/store";
 import type { NavId, SearchHit, Session } from "@/lib/t-books/types";
@@ -30,21 +33,24 @@ import { StatusBanners } from "./status-banners";
 
 export type { NavId };
 
-const NAV: { id: NavId; label: string; icon: typeof LayoutDashboard }[] = [
-  { id: "board", label: "Board", icon: LayoutDashboard },
-  { id: "vouchers", label: "Vouchers", icon: BookOpen },
-  { id: "vendors", label: "Vendors", icon: Building2 },
-  { id: "projects", label: "Projects", icon: FolderKanban },
-  { id: "sales", label: "Sales", icon: ShoppingCart },
-  { id: "purchase", label: "Purchase", icon: Package },
-  { id: "hr", label: "HR", icon: Users },
-  { id: "trial", label: "Trial", icon: Scale },
-  { id: "inventory", label: "Inventory", icon: Boxes },
-  { id: "logistics", label: "Logistics", icon: Truck },
-  { id: "documents", label: "Documents", icon: FileText },
-  { id: "settings", label: "Settings", icon: Settings },
-  { id: "access", label: "Access", icon: KeyRound },
-];
+const ICONS: Record<NavId, typeof LayoutDashboard> = {
+  board: LayoutDashboard,
+  vouchers: FileText,
+  finance: Wallet,
+  purchase: ShoppingCart,
+  sales: Banknote,
+  vendors: Users,
+  projects: FolderKanban,
+  inventory: Boxes,
+  logistics: Truck,
+  hr: Briefcase,
+  documents: Paperclip,
+  duplicates: Copy,
+  explorer: Search,
+  rules: Scale,
+  access: Users,
+  system: Settings,
+};
 
 export const DesktopLayout = memo(function DesktopLayout({
   session,
@@ -61,7 +67,7 @@ export const DesktopLayout = memo(function DesktopLayout({
   onSearchOpen: (id: NavId, hit: SearchHit) => void;
   children: ReactNode;
 }) {
-  const items = NAV.filter((item) => item.id !== "access" || canOpenAccess(session.role));
+  const items = LOOPBOOK_NAV.filter((item) => item.id !== "access" || canOpenAccess(session.role));
   const online = useBooks((s) => s.online);
   const refreshBusy = useBooks((s) => s.refreshBusy);
   const toast = useBooks((s) => s.toast);
@@ -87,23 +93,29 @@ export const DesktopLayout = memo(function DesktopLayout({
         </div>
         <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-3" aria-label="Main">
           {items.map((item) => {
-            const Icon = item.icon;
+            const Icon = ICONS[item.id];
             const isActive = item.id === active;
             return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => onNavigate(item.id)}
-                className={cn(
-                  "pressable flex h-10 items-center gap-2.5 rounded-md px-2.5 text-left text-sm",
-                  isActive
-                    ? "bg-navy text-paper-raised"
-                    : "text-ink-muted hover:bg-paper-sunken hover:text-ink",
-                )}
-              >
-                <Icon className="size-4 shrink-0" strokeWidth={1.75} aria-hidden="true" />
-                <span>{item.label}</span>
-              </button>
+              <div key={item.id}>
+                {"section" in item && item.section ? (
+                  <p className="mt-3 mb-1 px-2.5 text-[10px] uppercase tracking-[0.16em] text-ink-subtle">
+                    {item.section}
+                  </p>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => onNavigate(item.id)}
+                  className={cn(
+                    "pressable flex h-10 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-sm",
+                    isActive
+                      ? "bg-navy text-paper-raised"
+                      : "text-ink-muted hover:bg-paper-sunken hover:text-ink",
+                  )}
+                >
+                  <Icon className="size-4 shrink-0" strokeWidth={1.75} aria-hidden="true" />
+                  <span>{item.label}</span>
+                </button>
+              </div>
             );
           })}
         </nav>
