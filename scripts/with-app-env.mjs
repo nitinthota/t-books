@@ -20,9 +20,9 @@
  * `process.env`, which is why the merge has to happen before Vite starts.
  */
 import { spawn } from "node:child_process";
-import { readFileSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { constants as osConstants } from "node:os";
-import { dirname, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const APP_ENV_REL_PATH = ".grok/app-env.json";
@@ -104,14 +104,52 @@ export function isMainModule(moduleUrl) {
   }
 }
 
+/**
+ * Put this workspace's `node_modules/.bin` first so wrapped tools resolve even
+ * when a parent (Tauri `beforeBuildCommand`) did not keep npm's PATH extras.
+ */
+export function envWithLocalBin(env, root = projectRoot()) {
+  const next = { ...env };
+  const key = Object.keys(next).find((name) => name.toLowerCase() === "path") ?? "PATH";
+  const bin = join(root, "node_modules", ".bin");
+  const current = typeof next[key] === "string" ? next[key] : "";
+  next[key] = current ? `${bin}${delimiter}${current}` : bin;
+  return next;
+}
+
+/**
+ * Resolve `vite` to `node …/vite/bin/vite.js`.
+ *
+ * Windows `spawn("vite")` does not run npm's `.cmd` shim (ENOENT). Invoking the
+ * JS entry with the current Node binary works on every platform without a shell.
+ */
+export function resolveWrappedCommand(command, root = projectRoot()) {
+  if (command === "vite") {
+    const viteJs = join(root, "node_modules", "vite", "bin", "vite.js");
+    if (existsSync(viteJs)) {
+      return { command: process.execPath, argsPrefix: [viteJs], shell: false };
+    }
+  }
+  return {
+    command,
+    argsPrefix: [],
+    shell: process.platform === "win32",
+  };
+}
+
 function main(argv) {
   const [command, ...args] = argv;
   if (!command) {
     console.error("usage: node scripts/with-app-env.mjs <command> [args…]");
     process.exit(2);
   }
-  const env = mergeAppEnv(readAppEnv(projectRoot()), process.env);
-  const child = spawn(command, args, { stdio: "inherit", env });
+  const env = envWithLocalBin(mergeAppEnv(readAppEnv(projectRoot()), process.env));
+  const resolved = resolveWrappedCommand(command);
+  const child = spawn(resolved.command, [...resolved.argsPrefix, ...args], {
+    stdio: "inherit",
+    env,
+    shell: resolved.shell,
+  });
   // The dev server is long-running and is stopped by signalling this wrapper.
   for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
     process.on(signal, () => child.kill(signal));

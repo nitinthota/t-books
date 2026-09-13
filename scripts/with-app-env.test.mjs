@@ -2,15 +2,17 @@ import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { test } from "node:test";
 import { promisify } from "node:util";
 import {
   APP_ENV_REL_PATH,
+  envWithLocalBin,
   mergeAppEnv,
   parseAppEnv,
   projectRoot,
   readAppEnv,
+  resolveWrappedCommand,
 } from "./with-app-env.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -125,4 +127,19 @@ test("the CLI still runs when invoked through a symlinked path", async () => {
     PRINT_FLAG,
   ]);
   assert.equal(stdout, "false");
+});
+
+test("local node_modules/.bin is prepended to PATH", () => {
+  const merged = envWithLocalBin({ PATH: "/usr/bin" }, projectRoot());
+  const parts = merged.PATH.split(delimiter);
+  assert.equal(parts[0], join(projectRoot(), "node_modules", ".bin"));
+  assert.ok(parts.includes("/usr/bin"));
+});
+
+test("vite is invoked through its JS entry, not a PATHEXT shim", () => {
+  const resolved = resolveWrappedCommand("vite");
+  assert.equal(resolved.command, process.execPath);
+  assert.equal(resolved.argsPrefix.length, 1);
+  assert.match(resolved.argsPrefix[0], /vite[/\\]bin[/\\]vite\.js$/);
+  assert.equal(resolved.shell, false);
 });
