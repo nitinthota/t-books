@@ -2,7 +2,7 @@ name: Build TBooks Installer
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   workflow_dispatch:
 
 jobs:
@@ -10,33 +10,28 @@ jobs:
     runs-on: windows-latest
 
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: Setup Node
-      uses: actions/setup-node@v4
-      with:
-        node-version: '22'
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
 
-    - name: Install Rust (required for Tauri)
-      uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
 
-    - name: Install dependencies
-      run: npm ci
+      - name: Install WebView2 Runtime
+        run: choco install microsoft-edge-webview2-runtime -y
 
-    - name: Build Tauri App
-      run: |
-        npm run build:tauri
-        npm run tauri:build
+      - name: Install dependencies
+        run: npm ci
 
-    - name: Upload EXE
-      uses: actions/upload-artifact@v4
-      with:
-        name: TBooks-EXE
-        path: src-tauri/target/release/*.exe
+      - name: Build Tauri App (single command)
+        run: npm run tauri:build
 
-    - name: Upload Installer Bundle
-      uses: actions/upload-artifact@v4
-      with:
-        name: TBooks-Installer
-        path: src-tauri/target/release/bundle/
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: TBooks-Build
+          path: src-tauri/target/release/bundle/**
