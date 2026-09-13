@@ -91,17 +91,18 @@ Already in `hive.rs`, `submit.rs`, `writeback.rs`, `office_sync.rs`, `tests/live
 
 ## Pass / fail log
 
-Recorded on this branch after the suites below. Dummy tokens only. No live Google **writes**. Live Google **READ** of `Voucher_Raw_Data` was **skipped** (no `TBOOKS_GOOGLE_SA_JSON` / credentials.json).
+Recorded on this branch after the suites below. Dummy tokens only. **No live Google writes succeeded** (no service-account JWT in this environment). Google Drive MCP can **read** hive workbooks as the connected Drive user but has **no cell-write API**. Grok app-data Sheets tools were not in the tool list.
 
 | Suite | Result |
 |---|---|
-| `rustup run 1.88.0 cargo test --locked --lib` | **pass** 125 / 0 fail |
+| `rustup run 1.88.0 cargo test --locked --lib` | **pass** 126 / 0 fail |
 | Integration (functional, data_corruption, stress, multi_user, recovery, writeback, invalid_data, release_matrix) | **pass** 51 / 0 fail |
+| `tests/live_sheets.rs` | **7 passed** — logic + multi-user Memory hive; live write **skipped** (no `TBOOKS_GOOGLE_SA_JSON` / credentials.json) |
 | Endurance + load cargo tests | skipped (time cap) |
 | `t-books-stress` / `t-books-endurance` bins | skipped (time cap); bounded 2k-voucher stress test passed |
 | Node: hive-plan, modules, rbac, release, business_rules, vouchers | **pass** 36 / 0 fail |
 | Live Google READ raw | **skipped** — no service account in this environment |
-| Live Google write (including raw) | **not run** |
+| Live Google write (hive tabs) | **skipped** — no service account; Drive MCP cannot PUT cells. Not claimed as success. |
 
 Optional: set `TBOOKS_LIVE_GOOGLE=1` plus a service account to require the raw READ. Never write `Voucher_Raw_Data`.
 

@@ -4,8 +4,8 @@
 use crate::core::business_rules::sha256_hex;
 use crate::db::LocalBooks;
 use crate::hive::{
-    hive_conflict_message, is_live_dummy_key, sales_po_hive_key, submit_hive_row, tab_headers,
-    tab_name, CasOutcome, EnsureTab, Hive, HiveRow, KIND_DOCUMENT, KIND_INVENTORY, KIND_LOGISTICS,
+    hive_conflict_message, is_live_dummy_key, sales_po_hive_key, submit_hive_row, tab_name,
+    CasOutcome, EnsureTab, Hive, HiveRow, KIND_DOCUMENT, KIND_INVENTORY, KIND_LOGISTICS,
     KIND_PAYMENT, KIND_PURCHASE, KIND_SALARY, KIND_SALES_PO,
 };
 use crate::online::is_online;
@@ -541,7 +541,9 @@ impl Hive for GoogleOfficeHive {
             Err(err) => Err(err),
         }
     }
+}
 
+impl GoogleOfficeHive {
     /// Blank a dummy test row after a live write. Refuses anything that is not a listed dummy key.
     pub fn blank_dummy_key(&mut self, kind: &str, key: &str) -> Result<()> {
         if !is_live_dummy_key(key) {
@@ -711,7 +713,7 @@ pub fn bootstrap_hive_tab(kind: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hive::MemoryHive;
+    use crate::hive::{tab_headers, MemoryHive};
     use crate::office::{save_purchase_po, PurchasePoSave};
     use crate::open_memory;
 
