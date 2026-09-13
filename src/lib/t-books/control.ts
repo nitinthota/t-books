@@ -215,7 +215,8 @@ export async function hiveStatus(): Promise<HiveStatus> {
       tab: tabName(kind),
       present: false,
       rowCount: 0,
-      writable: kind !== "voucher_raw",
+      // Submit kinds only — Voucher_Raw_Data is a separate read-only archive.
+      writable: true,
       error: "Google credentials not found at %LOCALAPPDATA%/T-Books/credentials.json.",
     })),
   }));
