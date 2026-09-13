@@ -10,11 +10,11 @@
     "node": ">=22.12.0"
   },
   "scripts": {
-    "dev": "node scripts/with-app-env.mjs npx vite dev --host 0.0.0.0 --port 8080",
-    "build": "node scripts/with-app-env.mjs npx vite build && npm run db:migrate",
+    "dev": "npx vite dev --host 0.0.0.0 --port 8080",
+    "build": "npx vite build && npm run db:migrate",
     "db:migrate": "node scripts/migrate.mjs",
-    "build:dev": "node scripts/with-app-env.mjs npx vite build --mode development",
-    "preview": "node scripts/with-app-env.mjs npx vite preview",
+    "build:dev": "npx vite build --mode development",
+    "preview": "npx vite preview",
     "preview:restart": "node scripts/preview.mjs restart",
     "preview:stop": "node scripts/preview.mjs stop",
     "typecheck": "tsc --noEmit",
@@ -25,8 +25,8 @@
     "format": "prettier --write .",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build && node scripts/rename-installer.mjs",
-    "build:tauri": "node scripts/with-app-env.mjs npx vite build --config vite.tauri.config.ts"
+    "tauri:build": "tauri build",
+    "build:tauri": "npx vite build --config vite.tauri.config.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.4",
