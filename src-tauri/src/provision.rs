@@ -2,7 +2,7 @@
 
 use crate::hive::{EnsureTab, Hive};
 use crate::hive_plan::{
-    report_headers, target_for_kind, unique_writable_targets, validate_plan, KIND_VOUCHER_RAW,
+    report_headers, unique_writable_targets, validate_plan, KIND_VOUCHER_RAW,
 };
 use crate::migrate::{apply_plan_to_hive, plan_from_raw_values, MigrationPlan};
 use crate::office_sync::GoogleOfficeHive;
@@ -107,6 +107,7 @@ pub fn migrate_from_raw(dry_run: bool) -> Result<MigrationPlan> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::hive_plan::target_for_kind;
 
     #[test]
     fn dry_list_covers_plan_workbooks_not_raw() {

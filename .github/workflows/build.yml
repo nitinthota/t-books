@@ -54,7 +54,7 @@ jobs:
             echo "credentials.json must not be in the checkout used to build the installer."
             exit 1
           fi
-          if git ls-files | grep -E '(^|/)credentials\.json$|google-service-account\.json$'; then
+          if git ls-files | grep -Ei '(^|/)credentials\.json$|google-service-account\.json$|(^|/)\.env$|\.pem$|\.p12$'; then
             echo "Tracked credential files are forbidden."
             exit 1
           fi

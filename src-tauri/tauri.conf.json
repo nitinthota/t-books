@@ -45,6 +45,7 @@
       "icons/icon.ico"
     ],
     "windows": {
+      "bundleVCRuntime": true,
       "webviewInstallMode": {
         "type": "embedBootstrapper",
         "silent": true

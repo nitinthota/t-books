@@ -4,6 +4,21 @@ Installer file: **T-Books-Setup.exe** (per-user, Start menu, uninstall).
 
 This is a **Windows 10/11 desktop** app (Tauri 2 + Rust + React + SQLite). It is not a Vercel / browser site. There is **no auto-updater** in v1: ship a new `T-Books-Setup.exe` when you release.
 
+## Install on an office PC (no Node, no Rust)
+
+Give people **only** `T-Books-Setup.exe`. That is the only file they run. The wizard can have several steps (license, progress, finish). They do **not** unzip extra files, collect a folder of other `.exe`s, or install Node, Rust, npm, Chrome, Visual C++, or WebView2 themselves.
+
+On a fresh Windows 10/11 PC, those wizard steps (all inside the same Setup.exe) do this:
+
+1. Copy the T Books app (the program plus UI). Visual C++ runtime DLLs are **inside** Setup, next to the app binary — not a separate redistributable the person runs.
+2. If **WebView2** is already present (usual on Windows 11), skip that step.
+3. If WebView2 is missing (common on Windows 10), Setup runs Microsoft’s bootstrapper **from inside T-Books-Setup.exe**. That helper may download the Evergreen runtime from Microsoft. Internet may be needed for this one step. If WebView2 is still missing afterward, Setup retries that Microsoft download as another internal step. Nobody launches a second installer they downloaded themselves.
+4. Do **not** install Node, Rust, Chrome, or Office. Do **not** pack `credentials.json`, PEM, `.env`, or books.
+
+Books, backups, and logs stay in **`%LOCALAPPDATA%\T-Books`** (hyphenated). That folder is created when the app first runs, not as a secret baked into Setup. Uninstall does **not** delete it.
+
+Need internet **only** if WebView2 is missing (or later, for Access / Refresh / Submit). The register itself is offline-first after install. If the PC is offline and WebView2 is missing, Setup still finishes; run **the same** `T-Books-Setup.exe` again while online so that internal WebView2 step can complete.
+
 ## Before shipping
 
 1. Fresh install opens, owner can set a password.
@@ -21,7 +36,7 @@ Distribution: direct `.exe` (GitHub Release or office share). No store listing r
 
 ## Build (Windows PC — this is what produces Setup.exe)
 
-Need: Windows 10/11, Node 22, Rust stable (`rustup`), WebView2 (Win 11 already has it). NSIS is pulled by the Tauri bundler; you do not install Electron.
+Need on the **builder** PC only: Windows 10/11, Node 22, Rust stable (`rustup`). WebView2 is required to run the app locally while developing. The office `T-Books-Setup.exe` **embeds** Microsoft’s WebView2 bootstrapper (still one file). During Setup it may fetch the Evergreen runtime from Microsoft if WebView2 is missing. NSIS is pulled by the Tauri bundler; you do not install Electron.
 
 ```
 npm ci
