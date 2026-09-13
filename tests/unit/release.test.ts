@@ -44,7 +44,8 @@ test("Windows NSIS packaging is per-user T Books with no updater bundle", () => 
   assert.match(conf, /"createUpdaterArtifacts": false/);
   assert.match(conf, /"installMode": "currentUser"/);
   assert.match(conf, /"startMenuFolder": "T Books"/);
-  assert.match(conf, /embedBootstrapper/);
+  assert.match(conf, /downloadBootstrapper/);
+  assert.match(conf, /"bundleVCRuntime": true/);
   assert.doesNotMatch(conf, /"resources"/);
   assert.doesNotMatch(conf, /credentials\.json/);
   assert.doesNotMatch(cargo, /tauri-plugin-updater/);
@@ -63,6 +64,12 @@ test("Windows NSIS packaging is per-user T Books with no updater bundle", () => 
   assert.match(release, /npm run tauri:build/);
   assert.match(release, /cannot.*Windows NSIS/i);
   assert.match(release, /Uninstall.*does \*\*not\*\* delete/);
+  assert.match(release, /downloads.*WebView2/i);
+  assert.match(release, /no Node, no Rust/i);
+  assert.match(release, /%LOCALAPPDATA%\\T-Books/);
+  const quickStart = readFileSync(join(root, "docs/QUICK-START.md"), "utf8");
+  assert.match(quickStart, /downloads Microsoft.+Evergreen WebView2/i);
+  assert.match(quickStart, /%LOCALAPPDATA%\\T-Books/);
   assert.match(workflow, /windows-latest/);
   assert.match(workflow, /npm run tauri:build/);
   assert.match(workflow, /dist\/installers\/T-Books-Setup\.exe/);

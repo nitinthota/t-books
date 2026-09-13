@@ -1,8 +1,8 @@
 # T Books — quick start
 
-1. **Install** `T-Books-Setup.exe` on Windows 10/11 (per-user; no admin). Open **T Books** from the Start menu. Build that file with `npm run tauri:build` on a Windows PC (see docs/RELEASE.md). This Linux sandbox cannot produce the `.exe`.
+1. **Install** `T-Books-Setup.exe` on Windows 10/11 (per-user; no admin). You do **not** install Node or Rust on that PC. If **WebView2** is missing (common on Windows 10; rare on Windows 11), Setup downloads Microsoft’s Evergreen WebView2 runtime. Open **T Books** from the Start menu. Books stay in `%LOCALAPPDATA%\T-Books`. Build the setup file with `npm run tauri:build` on a Windows PC (see docs/RELEASE.md). This Linux sandbox cannot produce the `.exe`.
 2. **Login** as `thotanitin123@gmail.com` and set the password for this PC.
-3. Place `credentials.json` (service account) in `%LOCALAPPDATA%\T-Books` if you need Access/Refresh/Submit. Never put that JSON in git. `Voucher_Raw_Data` is read-only; live rows go to the Loopbooks hive workbooks (see docs/SHEET_HIVE_PLAN.md).
+3. Place `credentials.json` (service account) in `%LOCALAPPDATA%\T-Books` **after** install if you need Access/Refresh/Submit. Never put that JSON in git or in Setup.exe. `Voucher_Raw_Data` is read-only; live rows go to the Loopbooks hive workbooks (see docs/SHEET_HIVE_PLAN.md).
 4. **Refresh** when online to pull vouchers. Sales, HR, inventory, logistics stay local and are never deleted by Refresh.
 5. Open a voucher. Value, paid, still to pay are on that screen. Payments stay on the same voucher (max 5).
 6. **Submit to Google** only if you are owner/admin. A mismatch with the sheet is a conflict — reload or cancel. No silent overwrite.

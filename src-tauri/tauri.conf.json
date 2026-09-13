@@ -45,8 +45,9 @@
       "icons/icon.ico"
     ],
     "windows": {
+      "bundleVCRuntime": true,
       "webviewInstallMode": {
-        "type": "embedBootstrapper",
+        "type": "downloadBootstrapper",
         "silent": true
       },
       "nsis": {

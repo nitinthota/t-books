@@ -4,6 +4,20 @@ Installer file: **T-Books-Setup.exe** (per-user, Start menu, uninstall).
 
 This is a **Windows 10/11 desktop** app (Tauri 2 + Rust + React + SQLite). It is not a Vercel / browser site. There is **no auto-updater** in v1: ship a new `T-Books-Setup.exe` when you release.
 
+## Install on an office PC (no Node, no Rust)
+
+Give people **only** `T-Books-Setup.exe`. They do not install Node, Rust, npm, or Visual Studio. Those exist only on the machine that **builds** the installer.
+
+On a fresh Windows 10/11 PC, Setup:
+
+1. Copies the T Books app (the Tauri `.exe` plus UI assets). Visual C++ runtime DLLs ship next to that binary so nobody hunts for a redistributable.
+2. Checks for **Evergreen WebView2**. Windows 11 usually already has it; Windows 10 often does not. If it is missing, Setup **downloads** Microsoft’s WebView2 bootstrapper from Microsoft and runs it (needs internet for that step). If WebView2 is already there, nothing extra is downloaded.
+3. Does **not** install Node or Rust. Does **not** unpack `credentials.json`.
+
+Books, backups, and logs stay in **`%LOCALAPPDATA%\T-Books`** (hyphenated). That folder is created when the app first runs, not as a secret baked into Setup. Uninstall does not delete it.
+
+Need internet **only** if WebView2 is missing (or later, for Access / Refresh / Submit). The register itself is offline-first after install.
+
 ## Before shipping
 
 1. Fresh install opens, owner can set a password.
@@ -21,7 +35,7 @@ Distribution: direct `.exe` (GitHub Release or office share). No store listing r
 
 ## Build (Windows PC — this is what produces Setup.exe)
 
-Need: Windows 10/11, Node 22, Rust stable (`rustup`), WebView2 (Win 11 already has it). NSIS is pulled by the Tauri bundler; you do not install Electron.
+Need on the **builder** PC only: Windows 10/11, Node 22, Rust stable (`rustup`). WebView2 is required to run the app locally while developing; the office installer downloads it for users who lack it. NSIS is pulled by the Tauri bundler; you do not install Electron.
 
 ```
 npm ci
