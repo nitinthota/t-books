@@ -1,0 +1,12 @@
+{
+  "name": "T Books",
+  "install": "./scripts/cloud-agent-install.sh",
+  "start": "sh /workspace/startup.sh",
+  "ports": [
+    {
+      "name": "web preview",
+      "port": 8080
+    }
+  ],
+  "chromeExecutablePath": "/home/ubuntu/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome"
+}

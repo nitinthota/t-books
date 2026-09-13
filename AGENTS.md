@@ -349,3 +349,23 @@ auth/db: OFF by default — sign-in, @/lib/db or migrations ONLY on an accounts 
 never:   build an app for a greeting/number/question; invent imagine_* calls;
          ask the user to run commands; delete or abandon /workspace/startup.sh
 ```
+
+## Cloud Agent environment
+
+Repository-managed setup lives in `.cursor/environment.json`. Bootstrap:
+
+- `./scripts/cloud-agent-install.sh` — `npm ci`, Playwright Chromium, Rust stable
+  (≥ 1.98 for `src-tauri` deps), `cargo fetch`
+- `sh /workspace/startup.sh` — idempotent dev preview on `0.0.0.0:8080`
+
+Validation commands (web preview path):
+
+```bash
+npm run test:books          # TS business-rule + stress suites
+node scripts/browser-smoke.mjs
+export PATH="/usr/local/rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin:/usr/local/cargo/bin:$PATH"
+cargo test --manifest-path src-tauri/Cargo.toml --lib
+```
+
+Google service-account JSON is optional for preview (`secrets/README.md`). Without it
+the UI runs offline. `npm run tauri:build` targets Windows installers only.
