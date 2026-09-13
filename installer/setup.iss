@@ -9,6 +9,9 @@ Compression=lzma
 SolidCompression=yes
 
 [Files]
+; Try common tauri bundle locations and fallback to dist\*
+Source: "src-tauri\target\release\bundle\windows\*"; DestDir: "{app}"; Flags: recursesubdirs
+Source: "src-tauri\target\release\bundle\installer\*"; DestDir: "{app}"; Flags: recursesubdirs
 Source: "dist\*"; DestDir: "{app}"; Flags: recursesubdirs
 
 [Icons]
