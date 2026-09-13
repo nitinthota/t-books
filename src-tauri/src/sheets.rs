@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::db::data_dir;
 use crate::hive_plan::refuse_raw_write;
 use crate::{
-    ACCESS_TAB, BooksError, CREDENTIALS_FILE_NAME, DEFAULT_SPREADSHEET_ID, Result,
+    BooksError, CREDENTIALS_FILE_NAME, DEFAULT_SPREADSHEET_ID, Result,
 };
 
 const TOKEN_URI_DEFAULT: &str = "https://oauth2.googleapis.com/token";
@@ -423,10 +423,8 @@ pub fn fetch_sheet_values(account: &ServiceAccount, tab: &str) -> Result<Vec<Vec
 }
 
 pub fn fetch_access_values(account: &ServiceAccount) -> Result<Vec<Vec<String>>> {
-    match crate::hive_plan::target_for_kind(crate::hive::KIND_ACCESS) {
-        Ok(target) => fetch_values_on(account, &target.spreadsheet_id, &target.tab),
-        Err(_) => fetch_sheet_values(account, ACCESS_TAB),
-    }
+    let target = crate::hive_plan::target_for_kind(crate::hive::KIND_ACCESS)?;
+    fetch_values_on(account, &target.spreadsheet_id, &target.tab)
 }
 
 pub fn fetch_a1_on(
@@ -691,5 +689,49 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.to_string().contains("read-only"));
+        let err = append_row_on(
+            &account,
+            "1J9ZuNL1uZ7DmqOGIZojuOCMeYp9VnC-SEow6YG86cgE",
+            "Voucher_Raw_Data",
+            &["VOUCHER_1001".into()],
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("read-only"));
+    }
+
+    /// Optional live READ of Voucher_Raw_Data. Never writes. Skips without a service account.
+    #[test]
+    fn optional_live_read_of_raw_archive_never_writes() {
+        crate::hive_plan::refuse_raw_write(crate::DEFAULT_SPREADSHEET_ID, crate::VOUCHER_RAW_TAB)
+            .unwrap_err();
+        if !credentials_exist() {
+            eprintln!("skip live Google: no TBOOKS_GOOGLE_SA_JSON / credentials.json");
+            return;
+        }
+        let account = match load_service_account() {
+            Ok(a) => a,
+            Err(err) => {
+                if std::env::var("TBOOKS_LIVE_GOOGLE").ok().as_deref() == Some("1") {
+                    panic!("{}", err);
+                }
+                eprintln!("skip live Google: could not parse service account");
+                return;
+            }
+        };
+        let map = crate::hive_plan::load_map().unwrap();
+        match fetch_values_on(&account, &map.raw_source.spreadsheet_id, &map.raw_source.tab) {
+            Ok(values) => {
+                let n = values.len();
+                assert!(n < 500_000, "unexpectedly huge grid");
+                eprintln!("live Google READ Voucher_Raw_Data: {n} rows (cells not logged)");
+            }
+            Err(err) => {
+                let message = err.to_string();
+                if std::env::var("TBOOKS_LIVE_GOOGLE").ok().as_deref() == Some("1") {
+                    panic!("{message}");
+                }
+                eprintln!("skip live Google READ: {message}");
+            }
+        }
     }
 }

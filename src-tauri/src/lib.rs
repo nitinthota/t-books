@@ -17,6 +17,7 @@ mod sheets;
 mod submit;
 pub mod testdata;
 mod trial;
+mod voucher_edit;
 mod vouchers;
 
 pub use access::{
@@ -47,11 +48,13 @@ pub use ops::{
     OpsInfo, UpdateInfo,
 };
 pub use office::{
-    delete_purchase_payment, delete_purchase_po, delete_sales_po, list_purchase_payments,
-    list_purchase_po, list_sales_po, save_purchase_payment, save_purchase_po, save_sales_po,
-    DocumentRow, HrPerson, InventoryRow, LogisticsRow, PayrollRow, PoItemIn, PoPreview,
-    PurchasePayment, PurchasePaymentSave, PurchasePo, PurchasePoSave, SalesPo, SalesPoSave,
-    SearchHit, VendorRef,
+    delete_purchase_payment, delete_purchase_po, delete_sales_po, list_documents, list_hr_people,
+    list_hr_payroll, list_inventory, list_logistics, list_projects, list_purchase_payments,
+    list_purchase_po, list_sales_po, list_vendors, save_document, save_hr_payroll, save_hr_person,
+    save_inventory, save_logistics, save_purchase_payment, save_purchase_po, save_sales_po,
+    search_office, DocumentRow, HrPerson, InventoryRow, LogisticsRow, PayrollRow, PoItemIn,
+    PoPreview, PurchasePayment, PurchasePaymentSave, PurchasePo, PurchasePoSave, SalesPo,
+    SalesPoSave, SearchHit, VendorRef,
 };
 pub use office_sync::{
     bootstrap_hive_tab, hive_status, submit_office, submit_office_with, HiveStatus, HiveTabStatus,
@@ -64,6 +67,7 @@ pub use submit::{
     conflict_message, reload_voucher, reload_voucher_with, submit_voucher, submit_voucher_with,
     MemorySheet, SubmitOutcome,
 };
+pub use voucher_edit::{next_voucher_number, save_voucher, PaymentSave, VoucherSave};
 pub use vouchers::{
     apply_voucher_rows, apply_voucher_rows_discarding_dirty, dirty_guard, discard_dirty_vouchers,
     force_refresh_vouchers, get_voucher, get_voucher_summary, list_dirty_vouchers, list_vouchers,
@@ -450,6 +454,16 @@ mod desktop {
     ) -> std::result::Result<crate::vouchers::VoucherView, String> {
         let books = state.books.lock().expect("local books");
         crate::vouchers::get_voucher(&books, voucher_number).map_err(|e| e.to_string())
+    }
+
+    #[tauri::command]
+    fn save_voucher(
+        state: tauri::State<AppState>,
+        payload: VoucherSave,
+    ) -> std::result::Result<crate::vouchers::VoucherView, String> {
+        require_mutate(&state)?;
+        let mut books = state.books.lock().expect("local books");
+        crate::save_voucher(&mut books, payload).map_err(|e| e.to_string())
     }
 
     fn require_submit_role(state: &tauri::State<AppState>) -> std::result::Result<(), String> {
@@ -1017,6 +1031,7 @@ mod desktop {
                 get_voucher_summary,
                 list_vouchers,
                 get_voucher,
+                save_voucher,
                 submit_voucher,
                 reload_voucher,
                 list_sales_po,

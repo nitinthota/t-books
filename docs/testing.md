@@ -1,14 +1,19 @@
 # Testing
 
+Production-release matrix (every module / button, Google vs local): `docs/RELEASE_TEST.md`.
+
 Run from the repo root.
 
 ```bash
 # TypeScript
 npm run typecheck
-node --experimental-strip-types --test src/lib/t-books/business_rules/business_rules.test.ts src/lib/t-books/vouchers.test.ts src/lib/t-books/office.test.ts
+node --experimental-strip-types --test src/lib/t-books/business_rules/business_rules.test.ts src/lib/t-books/vouchers.test.ts src/lib/t-books/office.test.ts tests/unit/hive-plan.test.ts tests/unit/modules.test.ts tests/unit/rbac_and_banner.test.ts tests/unit/release.test.ts
 
-# Rust library (calcPo, dirty guard, submit, backup)
-cargo test --manifest-path src-tauri/Cargo.toml --lib
+# Rust library (calcPo, dirty guard, submit, backup, optional live READ)
+rustup run 1.88.0 cargo test --manifest-path src-tauri/Cargo.toml --locked --lib
+
+# Integration (functional, invalid data, release matrix, stress, writeback, …)
+rustup run 1.88.0 cargo test --manifest-path src-tauri/Cargo.toml --locked --tests
 
 # Full T Books suite (unit + integration + stress bins)
 npm run test:books
