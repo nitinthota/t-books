@@ -47,7 +47,7 @@
     "windows": {
       "bundleVCRuntime": true,
       "webviewInstallMode": {
-        "type": "downloadBootstrapper",
+        "type": "embedBootstrapper",
         "silent": true
       },
       "nsis": {

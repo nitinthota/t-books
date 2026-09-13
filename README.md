@@ -20,7 +20,7 @@ Offline-first Windows ERP for a small office. Each person installs their own cop
 
 ## Setup
 
-Office PCs need **T-Books-Setup.exe** only (no Node, no Rust). If WebView2 is missing, Setup downloads Microsoft’s Evergreen runtime. Books stay in `%LOCALAPPDATA%\T-Books`.
+Office PCs run **only** `T-Books-Setup.exe`. The wizard can have several steps. If WebView2 is missing, Setup installs it as one of those steps (internet may be needed). You do not install Node, Rust, or WebView2 yourself. Books stay in `%LOCALAPPDATA%\T-Books`.
 
 **Build** prerequisites (the PC that produces Setup.exe): Node 22, Rust 1.77+. **The installer is Windows-only** (NSIS). Build `T-Books-Setup.exe` on Windows 10/11 or from the GitHub Actions `windows-nsis` job. Linux cannot emit that `.exe`.
 
