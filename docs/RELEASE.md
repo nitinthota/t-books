@@ -34,7 +34,12 @@ That runs the Tauri frontend build, compiles the Rust app with the `desktop` fea
 
 Do **not** run `npx vite` or `cargo tauri` without the npm script. `npm run tauri:build` is the supported command (`tauri build` + rename).
 
-Linux / this sandbox **cannot** emit a Windows NSIS `.exe` (no Windows target, no NSIS). Use a Windows machine or the GitHub Actions job `windows-nsis` on `windows-latest`, then download the `T-Books-Setup` artifact.
+Linux / this sandbox **cannot** emit a Windows NSIS `.exe`. Attempted here:
+
+- `npm run tauri:build` (host Linux) — Rust still links GTK (`gdk-3.0` missing). Even with GTK, NSIS is not produced on Linux.
+- `tauri build --target x86_64-pc-windows-gnu --bundles nsis` — fails without MinGW (`x86_64-w64-mingw32-dlltool` missing). There is no Windows linker or NSIS (`makensis`) in this environment.
+
+Use a Windows 10/11 PC or the GitHub Actions job `windows-nsis` (`windows-latest`), then download the `T-Books-Setup` artifact. Do not treat a Linux `dist/client` Vite build as the desktop installer.
 
 ## After install (each PC)
 
