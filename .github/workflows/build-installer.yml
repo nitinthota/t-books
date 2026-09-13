@@ -19,20 +19,49 @@ jobs:
         node-version: '20'
 
     - name: Install deps
-      run: npm install
+      run: npm ci
 
-    - name: Build app
-      run: npm run build
+    - name: Build app (vite + tauri)
+      run: |
+        npm run build
+        npm run tauri:build
+
+    - name: Locate Tauri bundle
+      shell: bash
+      run: |
+        echo "Looking for common tauri bundle locations..."
+        if [ -d "src-tauri/target/release/bundle/msi" ]; then
+          echo "MSI bundle found"
+          ls -la src-tauri/target/release/bundle/msi
+          echo "OUTPUT=src-tauri/target/release/bundle/msi" >> $GITHUB_ENV
+        elif [ -d "src-tauri/target/release/bundle/windows" ]; then
+          echo "Windows bundle found"
+          ls -la src-tauri/target/release/bundle/windows
+          echo "OUTPUT=src-tauri/target/release/bundle/windows" >> $GITHUB_ENV
+        elif [ -d "src-tauri/target/release/bundle/installer" ]; then
+          echo "Installer bundle found"
+          ls -la src-tauri/target/release/bundle/installer
+          echo "OUTPUT=src-tauri/target/release/bundle/installer" >> $GITHUB_ENV
+        else
+          echo "No standard tauri bundle dir found. Falling back to installer/output"
+          echo "OUTPUT=installer/output" >> $GITHUB_ENV
+        fi
 
     - name: Install Inno Setup
       run: choco install innosetup -y
 
-    - name: Build Installer
+    - name: Build Installer (wrap native exe)
       run: |
-        "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\setup.iss
+        set OUTPUT_DIR=%OUTPUT%
+        if exist "%OUTPUT_DIR%\T-Books-Setup.exe" (
+          echo "Using existing T-Books-Setup.exe from tauri output"
+          copy "%OUTPUT_DIR%\T-Books-Setup.exe" installer\output\T-Books-Setup.exe
+        ) else (
+          "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\setup.iss
+        )
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
         name: TBooks-Setup
-        path: installer/output/T-Books-Setup.exe
+        path: installer/output/
