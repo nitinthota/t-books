@@ -130,7 +130,7 @@ export default function SettingsScreen({ onBack }: { onBack: () => void }) {
                   {tab.error ? ` · ${tab.error}` : ""}
                 </span>
               </span>
-              {owner && !tab.present ? (
+              {owner && !tab.present && tab.writable !== false ? (
                 <Button
                   size="sm"
                   variant="secondary"

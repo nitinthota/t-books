@@ -373,8 +373,39 @@ pub fn report_headers(kind: &str) -> Vec<String> {
         ]),
         KIND_TRIAL => h(&["Account", "Debit ₹", "Credit ₹", "Notes"]),
         KIND_RESULT => h(&["Line", "Amount ₹", "Notes"]),
+        "purchase_report" => report_headers(crate::hive::KIND_PURCHASE),
+        "sales_report" => report_headers(crate::hive::KIND_SALES_PO),
+        "salary_report" => report_headers(crate::hive::KIND_SALARY),
+        "inventory_report" => report_headers(crate::hive::KIND_INVENTORY),
+        "logistics_report" => report_headers(crate::hive::KIND_LOGISTICS),
         _ => crate::hive::tab_headers(kind),
     }
+}
+
+/// Writable hive tabs, one per spreadsheet + tab. Never includes the raw archive.
+pub fn unique_writable_targets() -> Result<Vec<HiveTarget>> {
+    let mut seen = BTreeMap::new();
+    let mut out = Vec::new();
+    for target in all_writable_targets()? {
+        if !target.writable {
+            continue;
+        }
+        if is_read_only(&target.spreadsheet_id, &target.tab) {
+            continue;
+        }
+        let key = format!("{}::{}", target.spreadsheet_id, target.tab);
+        if seen.insert(key, ()).is_none() {
+            out.push(target);
+        }
+    }
+    Ok(out)
+}
+
+/// Hive status list: read-only archive first, then every live workbook tab.
+pub fn status_targets() -> Result<Vec<HiveTarget>> {
+    let mut out = vec![target_for_kind(KIND_VOUCHER_RAW)?];
+    out.extend(unique_writable_targets()?);
+    Ok(out)
 }
 
 pub fn folder_tree_lines(map: &HiveMap) -> Vec<String> {
@@ -484,6 +515,14 @@ mod tests {
                 assert_eq!(t.tab, "Voucher register");
             }
         }
+        let writable = unique_writable_targets().unwrap();
+        assert!(writable.len() >= 20);
+        assert!(writable.iter().all(|t| t.spreadsheet_id != DEFAULT_SPREADSHEET_ID));
+        assert!(writable.iter().any(|t| t.tab == "Access"));
+        assert!(writable.iter().any(|t| t.tab == "Migration_Log"));
+        let status = status_targets().unwrap();
+        assert_eq!(status[0].kind, KIND_VOUCHER_RAW);
+        assert!(!status[0].writable);
     }
 
     #[test]

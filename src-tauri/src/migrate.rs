@@ -80,6 +80,66 @@ fn classify_voucher(v: &ParsedVoucher) -> &'static str {
     }
 }
 
+/// Voucher register cells (no fp/rev — hive CAS appends those).
+pub fn register_cells_from_parsed(
+    v: &ParsedVoucher,
+    totals: &crate::core::business_rules::VoucherComputed,
+    purpose: &str,
+    remarks: &str,
+) -> Vec<String> {
+    let tds: f64 = v.payments.iter().map(|p| p.tds_rupees.unwrap_or(0.0)).sum();
+    vec![
+        v.voucher_number.to_string(),
+        v.voucher_date.clone(),
+        v.vendor.clone(),
+        v.project.clone(),
+        v.tax_invoice.clone(),
+        purpose.to_string(),
+        money(totals.total_value),
+        money(totals.total_paid),
+        money(tds),
+        money(totals.remaining),
+        totals.status.clone(),
+        v.bank.clone(),
+        v.account_number.clone(),
+        v.ifsc.clone(),
+        v.gst.clone(),
+        remarks.to_string(),
+        String::new(),
+    ]
+}
+
+pub fn register_cells_for_voucher(v: &ParsedVoucher) -> Vec<String> {
+    let input = VoucherInput {
+        voucher_number: v.voucher_number,
+        tax_invoice: v.tax_invoice.clone(),
+        vendor: v.vendor.clone(),
+        bank: v.bank.clone(),
+        account_number: v.account_number.clone(),
+        ifsc: v.ifsc.clone(),
+        gst: v.gst.clone(),
+        project: v.project.clone(),
+        comments: String::new(),
+        payments: v.payments.clone(),
+    };
+    let totals = summarize_voucher(&input);
+    let purpose: String = v
+        .payments
+        .iter()
+        .map(|p| p.description.trim())
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join(" · ");
+    let remarks: String = v
+        .payments
+        .iter()
+        .map(|p| p.remarks.trim())
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join(" · ");
+    register_cells_from_parsed(v, &totals, &purpose, &remarks)
+}
+
 fn log_row(
     run_id: &str,
     at: &str,
@@ -195,27 +255,8 @@ pub fn plan_from_raw_values(values: &[Vec<String>], run_id: &str) -> MigrationPl
             .filter(|s| !s.is_empty())
             .collect::<Vec<_>>()
             .join(" · ");
-        let tds: f64 = v.payments.iter().map(|p| p.tds_rupees.unwrap_or(0.0)).sum();
         let key = v.voucher_number.to_string();
-        let cells = vec![
-            key.clone(),
-            v.voucher_date.clone(),
-            v.vendor.clone(),
-            v.project.clone(),
-            v.tax_invoice.clone(),
-            purpose.clone(),
-            money(totals.total_value),
-            money(totals.total_paid),
-            money(tds),
-            money(totals.remaining),
-            totals.status.clone(),
-            v.bank.clone(),
-            v.account_number.clone(),
-            v.ifsc.clone(),
-            v.gst.clone(),
-            remarks,
-            String::new(),
-        ];
+        let cells = register_cells_from_parsed(v, &totals, &purpose, &remarks);
         vouchers.push(StructuredVoucher {
             key: key.clone(),
             cells,
@@ -394,6 +435,17 @@ pub fn plan_from_raw_values(values: &[Vec<String>], run_id: &str) -> MigrationPl
         "skip",
         "Raw sheet has no stock rows. Stock stays header-only.",
     ));
+    log.push(log_row(
+        run_id,
+        at,
+        0,
+        "",
+        "unmapped_module",
+        "logistics",
+        "",
+        "skip",
+        "Raw sheet has no trip rows. Trips stay header-only.",
+    ));
 
     let imported = vouchers.len() as u32;
     let payments_out = payments.len() as u32;
@@ -505,6 +557,8 @@ mod tests {
         assert!(plan.log.iter().any(|r| r.class == "skipped_dotted"));
         assert_eq!(plan.vouchers[0].key, "20");
         assert_eq!(plan.vouchers[0].class, "project_expense");
+        assert!(plan.log.iter().any(|r| r.action == "map" && r.target_kind == KIND_VOUCHER));
+        assert!(plan.log.iter().any(|r| r.class == "unmapped_module" && r.target_kind == "logistics"));
         assert!(!plan.payments.is_empty());
         assert!(plan.vendors.iter().any(|v| v[0].starts_with("VEND_")));
     }

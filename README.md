@@ -7,7 +7,7 @@ Offline-first Windows ERP for a small office. Each person installs their own cop
 ## Features
 
 - **Offline-first** — open, edit, and save with no network
-- **Google Sheets sync (controlled)** — Access list and `Voucher_Raw_Data` only, on demand
+- **Google Sheets sync (controlled)** — Access (Loopbooks — Access), Refresh from read-only `Voucher_Raw_Data`, Submit to Voucher register
 - **Multi-user safe** — one voucher row per submit; fingerprint conflict if another PC changed that row
 - **Conflict detection** — dirty local vouchers block Refresh until Keep local / Discard local
 - **Local-first performance** — SQLite on disk, lists virtualized, aimed at a 4 GB laptop

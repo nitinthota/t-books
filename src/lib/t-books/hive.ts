@@ -49,11 +49,11 @@ export function tabName(kind: string): string {
     case KIND_ACCESS:
       return "Access";
     case KIND_VOUCHER:
-      return "Voucher_Raw_Data";
+      return "Voucher register";
     case KIND_PURCHASE:
       return "Purchase";
     case KIND_PAYMENT:
-      return "Payments";
+      return "Purchase payments";
     case KIND_SALARY:
       return "Payroll";
     case KIND_SALES_PO:

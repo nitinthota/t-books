@@ -29,6 +29,7 @@ export type HiveTabStatus = {
   tab: string;
   present: boolean;
   rowCount: number;
+  writable?: boolean;
   error: string | null;
 };
 
@@ -214,6 +215,7 @@ export async function hiveStatus(): Promise<HiveStatus> {
       tab: tabName(kind),
       present: false,
       rowCount: 0,
+      writable: kind !== "voucher_raw",
       error: "Google credentials not found at %LOCALAPPDATA%/T-Books/credentials.json.",
     })),
   }));

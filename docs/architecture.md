@@ -8,9 +8,9 @@ PC
  └─ Rust        ──writes─►  SQLite
                   │
                   └── only on explicit commands, if online:
-                        Refresh Access
-                        Refresh Voucher_Raw_Data
-                        Submit one voucher
+                        Refresh Access (Loopbooks — Access)
+                        Refresh Voucher_Raw_Data (read-only archive)
+                        Submit one voucher → Voucher register
                         Check for updates
 ```
 
@@ -45,7 +45,7 @@ See [SHEET_HIVE_PLAN.md](SHEET_HIVE_PLAN.md).
 | Data | Where | Refresh |
 |---|---|---|
 | Who can sign in | Access tab + `access_cache` | Manual |
-| Voucher register | `Voucher_Raw_Data` + `vouchers` | Manual, dirty guard |
+| Voucher register | `Voucher_Raw_Data` (history, read-only) + `Loopbooks — Voucher register` + local `vouchers` | Refresh reads archive; Submit writes register |
 | Sales / purchase / HR / inventory / logistics / documents | Local tables only | Never deleted |
 | Passwords | `users_local.password_hash` | Never in Google |
 

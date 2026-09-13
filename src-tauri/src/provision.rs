@@ -1,8 +1,8 @@
 //! Create missing hive tabs (headers only) and migrate from the read-only raw sheet.
 
-use crate::hive::{EnsureTab, Hive, HIVE_KINDS};
+use crate::hive::{EnsureTab, Hive};
 use crate::hive_plan::{
-    all_writable_targets, load_map, report_headers, target_for_kind, validate_plan, KIND_VOUCHER_RAW,
+    report_headers, target_for_kind, unique_writable_targets, validate_plan, KIND_VOUCHER_RAW,
 };
 use crate::migrate::{apply_plan_to_hive, plan_from_raw_values, MigrationPlan};
 use crate::office_sync::GoogleOfficeHive;
@@ -36,10 +36,11 @@ pub fn provision_hive(allow_create: bool) -> Result<ProvisionReport> {
             ),
         });
     }
+    let targets = unique_writable_targets()?;
     if !allow_create {
         return Ok(ProvisionReport {
             folders,
-            tabs: all_writable_targets()?
+            tabs: targets
                 .into_iter()
                 .map(|t| format!("{} / {}", t.workbook_title, t.tab))
                 .collect(),
@@ -48,38 +49,22 @@ pub fn provision_hive(allow_create: bool) -> Result<ProvisionReport> {
     }
     let mut hive = GoogleOfficeHive::connect_bootstrap()?;
     let mut tabs = Vec::new();
-    let mut kinds: Vec<String> = HIVE_KINDS.iter().map(|s| (*s).to_string()).collect();
-    for extra in [
-        "vendor",
-        "project",
-        "rules",
-        "people",
-        "purchase_item",
-        "sales_item",
-        "outstanding",
-        "board",
-        "credentials",
-        "migration_log",
-        "voucher_payment",
-        "document",
-    ] {
-        kinds.push(extra.into());
-    }
-    for kind in kinds {
-        if kind == KIND_VOUCHER_RAW {
+    for target in targets {
+        if target.kind == KIND_VOUCHER_RAW || !target.writable {
             continue;
         }
-        let headers = report_headers(&kind);
-        match hive.ensure_tab(&kind, &headers) {
+        let headers = report_headers(&target.kind);
+        match hive.ensure_tab(&target.kind, &headers) {
             Ok(EnsureTab::Exists) => {
-                let target = target_for_kind(&kind)?;
                 tabs.push(format!("{} already on {}", target.tab, target.workbook_title));
             }
             Ok(EnsureTab::BootstrappedHeaders) => {
-                let target = target_for_kind(&kind)?;
-                tabs.push(format!("{} created with headers on {}", target.tab, target.workbook_title));
+                tabs.push(format!(
+                    "{} created with headers on {}",
+                    target.tab, target.workbook_title
+                ));
             }
-            Err(err) => tabs.push(format!("{kind}: {err}")),
+            Err(err) => tabs.push(format!("{}: {err}", target.kind)),
         }
     }
     Ok(ProvisionReport {
@@ -102,7 +87,7 @@ pub fn migrate_from_raw(dry_run: bool) -> Result<MigrationPlan> {
         ));
     }
     let account = load_service_account()?;
-    let map = load_map()?;
+    let map = crate::hive_plan::load_map()?;
     let values = fetch_values_on(
         &account,
         &map.raw_source.spreadsheet_id,
@@ -117,4 +102,20 @@ pub fn migrate_from_raw(dry_run: bool) -> Result<MigrationPlan> {
     let mut hive = GoogleOfficeHive::connect_bootstrap()?;
     apply_plan_to_hive(&mut hive, &plan)?;
     Ok(plan)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dry_list_covers_plan_workbooks_not_raw() {
+        let targets = unique_writable_targets().unwrap();
+        assert!(targets.iter().any(|t| t.tab == "Voucher register"));
+        assert!(targets.iter().any(|t| t.tab == "Access"));
+        assert!(targets.iter().any(|t| t.tab == "Payments"));
+        assert!(targets.iter().any(|t| t.kind == "trial"));
+        assert!(targets.iter().all(|t| t.tab != "Voucher_Raw_Data"));
+        let _ = target_for_kind(KIND_VOUCHER_RAW).unwrap();
+    }
 }

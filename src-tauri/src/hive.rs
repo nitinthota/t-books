@@ -430,12 +430,13 @@ pub fn pending_payload_json(kind: &str, key: &str) -> String {
     serde_json::json!({ "kind": kind, "key": key }).to_string()
 }
 
+/// Live hive tab titles (Loopbooks workbooks). The archive tab is `VOUCHER_RAW_TAB`.
 pub fn tab_name(kind: &str) -> &'static str {
     match kind {
         KIND_ACCESS => "Access",
-        KIND_VOUCHER => "Voucher_Raw_Data",
+        KIND_VOUCHER => "Voucher register",
         KIND_PURCHASE => "Purchase",
-        KIND_PAYMENT => "Payments",
+        KIND_PAYMENT => "Purchase payments",
         KIND_SALARY => "Payroll",
         KIND_SALES_PO => "Sales_PO",
         KIND_INVENTORY => "Inventory",
@@ -735,6 +736,8 @@ mod tests {
         assert_eq!(HIVE_KINDS.len(), 9);
         assert!(HIVE_KINDS.contains(&KIND_SALES_PO));
         assert_eq!(tab_name(KIND_SALES_PO), "Sales_PO");
+        assert_eq!(tab_name(KIND_VOUCHER), "Voucher register");
+        assert_eq!(tab_name(KIND_PAYMENT), "Purchase payments");
         assert_eq!(sales_po_hive_key("PO-1", "CUST_01"), "PO-1@CUST_01");
     }
 }

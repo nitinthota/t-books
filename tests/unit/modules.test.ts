@@ -31,6 +31,7 @@ test("T Books nav is 1:1 with Loopbook modes", () => {
 test("Windows hive kinds cover every office module plus Access and vouchers", () => {
   assert.deepEqual([...WINDOWS_HIVE_KINDS], [...HIVE_KINDS]);
   assert.equal(tabName("sales_po"), "Sales_PO");
+  assert.equal(tabName("voucher"), "Voucher register");
   assert.equal(liveTabName("voucher"), "Voucher register");
   assert.equal(salesPoHiveKey("PO-1", "CUST_01"), "PO-1@CUST_01");
 });
