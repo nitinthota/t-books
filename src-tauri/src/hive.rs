@@ -50,6 +50,22 @@ pub fn hive_conflict_message(key: &str) -> String {
     format!("{key} was just updated by another user. Reload and submit again.")
 }
 
+/// Dummy office keys allowed in live Google write tests. Never a GSTIN, bank, or real voucher.
+pub fn is_live_dummy_key(key: &str) -> bool {
+    matches!(
+        key.trim(),
+        "PUR-0001"
+            | "PUR-0002"
+            | "PAY-0001"
+            | "SAL-0001"
+            | "CUST_01"
+            | "VEND_02"
+            | "VOUCHER_1001"
+            | "PO-1@CUST_01"
+            | "PO-1@CUST_02"
+    )
+}
+
 pub fn sales_po_hive_key(po_number: &str, project: &str) -> String {
     format!("{}@{}", po_number.trim(), project.trim())
 }
@@ -739,5 +755,15 @@ mod tests {
         assert_eq!(tab_name(KIND_VOUCHER), "Voucher register");
         assert_eq!(tab_name(KIND_PAYMENT), "Purchase payments");
         assert_eq!(sales_po_hive_key("PO-1", "CUST_01"), "PO-1@CUST_01");
+    }
+
+    #[test]
+    fn live_dummy_keys_are_the_listed_tokens_only() {
+        assert!(is_live_dummy_key("PUR-0001"));
+        assert!(is_live_dummy_key("PAY-0001"));
+        assert!(is_live_dummy_key("PO-1@CUST_01"));
+        assert!(!is_live_dummy_key("27AAACT1234A1Z5"));
+        assert!(!is_live_dummy_key("20"));
+        assert!(!is_live_dummy_key("Voucher 20"));
     }
 }

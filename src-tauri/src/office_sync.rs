@@ -4,8 +4,8 @@
 use crate::core::business_rules::sha256_hex;
 use crate::db::LocalBooks;
 use crate::hive::{
-    hive_conflict_message, sales_po_hive_key, submit_hive_row, tab_headers, tab_name, CasOutcome,
-    EnsureTab, Hive, HiveRow, KIND_DOCUMENT, KIND_INVENTORY, KIND_LOGISTICS,
+    hive_conflict_message, is_live_dummy_key, sales_po_hive_key, submit_hive_row, tab_headers,
+    tab_name, CasOutcome, EnsureTab, Hive, HiveRow, KIND_DOCUMENT, KIND_INVENTORY, KIND_LOGISTICS,
     KIND_PAYMENT, KIND_PURCHASE, KIND_SALARY, KIND_SALES_PO,
 };
 use crate::online::is_online;
@@ -540,6 +540,45 @@ impl Hive for GoogleOfficeHive {
             }
             Err(err) => Err(err),
         }
+    }
+
+    /// Blank a dummy test row after a live write. Refuses anything that is not a listed dummy key.
+    pub fn blank_dummy_key(&mut self, kind: &str, key: &str) -> Result<()> {
+        if !is_live_dummy_key(key) {
+            return Err(BooksError::from(
+                "Live tests may only blank dummy keys (PUR-0001, PAY-0001, CUST_01, …).",
+            ));
+        }
+        let target = target_for_kind(kind)?;
+        crate::hive_plan::refuse_raw_write(&target.spreadsheet_id, &target.tab)?;
+        if !target.writable {
+            return Err(BooksError::from(
+                "Voucher_Raw_Data is read-only. Write the structured hive instead. The original register was not changed.",
+            ));
+        }
+        let values = match fetch_values_on(&self.account, &target.spreadsheet_id, &target.tab) {
+            Ok(v) => v,
+            Err(err) if is_missing_tab_error(&err.to_string()) => return Ok(()),
+            Err(err) => return Err(err),
+        };
+        let existing: Vec<u32> = parse_tab_rows(&values, kind)
+            .into_iter()
+            .enumerate()
+            .filter(|(_, r)| r.key.eq_ignore_ascii_case(key))
+            .map(|(i, _)| (i as u32) + 2)
+            .collect();
+        for sheet_row in existing {
+            let a1 = format!("A{sheet_row}:Z{sheet_row}");
+            let blanks = vec![String::new(); 26];
+            update_row_on(
+                &self.account,
+                &target.spreadsheet_id,
+                &target.tab,
+                &a1,
+                &blanks,
+            )?;
+        }
+        Ok(())
     }
 }
 

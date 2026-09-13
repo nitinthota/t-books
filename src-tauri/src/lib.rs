@@ -33,10 +33,10 @@ pub use control::{
 pub use core::business_rules;
 pub use db::{data_dir, db_path, open_at, open_db, open_memory, LocalBooks};
 pub use hive::{
-    hive_conflict_message, list_dirty_keys, list_pending, submit_hive_row, tab_headers, tab_name,
-    CasOutcome, DirtyKey, Hive, MemoryHive, PendingSubmit, KIND_ACCESS, KIND_DOCUMENT,
-    KIND_INVENTORY, KIND_LOGISTICS, KIND_PAYMENT, KIND_PURCHASE, KIND_SALARY, KIND_SALES_PO,
-    KIND_VOUCHER, HIVE_KINDS,
+    hive_conflict_message, is_live_dummy_key, list_dirty_keys, list_pending, submit_hive_row,
+    tab_headers, tab_name, CasOutcome, DirtyKey, Hive, MemoryHive, PendingSubmit, KIND_ACCESS,
+    KIND_DOCUMENT, KIND_INVENTORY, KIND_LOGISTICS, KIND_PAYMENT, KIND_PURCHASE, KIND_SALARY,
+    KIND_SALES_PO, KIND_VOUCHER, HIVE_KINDS,
 };
 pub use log::{
     apply_debug_flag, clear_logs, error_log_path, event as log_event, is_debug,
@@ -57,10 +57,12 @@ pub use office::{
     SalesPoSave, SearchHit, VendorRef,
 };
 pub use office_sync::{
-    bootstrap_hive_tab, hive_status, submit_office, submit_office_with, HiveStatus, HiveTabStatus,
+    bootstrap_hive_tab, hive_status, submit_office, submit_office_with, GoogleOfficeHive, HiveStatus,
+    HiveTabStatus,
 };
+pub use sheets::credentials_exist;
 pub use provision::{migrate_from_raw, provision_hive, ProvisionReport};
-pub use hive_plan::{load_map as load_hive_map, validate_plan, HiveTarget};
+pub use hive_plan::{load_map as load_hive_map, refuse_raw_write, validate_plan, HiveTarget};
 pub use trial::{available_fy, build_trial, TrialBalance, TrialLine};
 pub use passwords::{hash_password, validate_new_password, verify_password};
 pub use submit::{

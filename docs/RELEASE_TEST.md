@@ -16,7 +16,7 @@ node --experimental-strip-types --test tests/unit/hive-plan.test.ts tests/unit/m
 
 Skip the endurance/load **bins** on a short agent run. Bounded cargo stress (`two_thousand_vouchers_*`, mixed thousand-row parse) is in `--tests`.
 
-Optional live READ: set `TBOOKS_GOOGLE_SA_JSON` or drop a service-account file where T Books looks. Set `TBOOKS_LIVE_GOOGLE=1` to **require** that READ to pass. Never write `Voucher_Raw_Data` in tests.
+Optional live READ/WRITE: set `TBOOKS_GOOGLE_SA_JSON` or drop a service-account file where T Books looks. Set `TBOOKS_LIVE_GOOGLE=1` to **require** live Google tests to pass. Never write `Voucher_Raw_Data`. Dummy keys only.
 
 ---
 
@@ -87,7 +87,7 @@ Optional live READ: set `TBOOKS_GOOGLE_SA_JSON` or drop a service-account file w
 
 ## Google Sheets (MemoryHive / MemorySheet)
 
-Already in `hive.rs`, `submit.rs`, `writeback.rs`, `office_sync.rs`: CAS match, conflict, missing tab keeps local, failed write leaves outbox. `sheets.rs` refuses raw writes without calling Google. Optional live **READ** of raw only.
+Already in `hive.rs`, `submit.rs`, `writeback.rs`, `office_sync.rs`, `tests/live_sheets.rs`: CAS match, conflict, missing tab keeps local, failed write leaves outbox. `sheets.rs` refuses raw writes without calling Google. Optional live **READ** of raw. Optional live **WRITE** of dummy keys on writable hive tabs (`Purchase`, `Purchase payments`, `Sales_PO`) when a service account is present; skipped otherwise. Drive MCP can list/read hive workbooks but cannot PUT cell values.
 
 ## Pass / fail log
 
