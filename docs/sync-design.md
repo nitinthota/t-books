@@ -4,7 +4,7 @@ Google is the office register. Each PC is independent until Submit. There is **n
 
 ## Refresh (sheet → this PC)
 
-Button on the board. Reads `Voucher_Raw_Data` once.
+Button on the board. Reads `Voucher_Raw_Data` once (archive, never written).
 
 1. If this PC is offline → fail with a real error. Do not fake an empty list.
 2. If any local voucher is **dirty** → **stop**. Show voucher numbers.  
@@ -14,11 +14,11 @@ Button on the board. Reads `Voucher_Raw_Data` once.
 5. Re-run calcPo / totals / status after import.
 6. **Never** delete or rewrite sales, purchase, HR, inventory, logistics, documents.
 
-Access Refresh is a separate command: reads the Access tab into `access_cache`. Same fail-safe: keep old cache on error.
+Access Refresh is a separate command: reads Loopbooks — Access into `access_cache`. Same fail-safe: keep old cache on error.
 
 ## Submit (this PC → sheet)
 
-One voucher per click. Owner/admin only.
+One voucher per click. Owner/admin only. Writes **Voucher register**, never `Voucher_Raw_Data`.
 
 1. Offline → fail, keep dirty.
 2. Fetch **that row only** (find column A, then that A1 range).

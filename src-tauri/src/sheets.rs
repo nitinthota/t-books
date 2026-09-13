@@ -6,12 +6,13 @@ use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
 use serde::{Deserialize, Serialize};
 
 use crate::db::data_dir;
+use crate::hive_plan::refuse_raw_write;
 use crate::{
-    ACCESS_TAB, BooksError, CREDENTIALS_FILE_NAME, DEFAULT_SPREADSHEET_ID, Result,
+    BooksError, CREDENTIALS_FILE_NAME, DEFAULT_SPREADSHEET_ID, Result,
 };
 
 const TOKEN_URI_DEFAULT: &str = "https://oauth2.googleapis.com/token";
-const SHEETS_SCOPE: &str = "https://www.googleapis.com/auth/spreadsheets";
+const GOOGLE_SCOPE: &str = "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive";
 const HTTP_TIMEOUT_SECS: u64 = 15;
 
 pub struct ServiceAccount {
@@ -38,8 +39,30 @@ pub fn credentials_path() -> PathBuf {
     data_dir().join(CREDENTIALS_FILE_NAME)
 }
 
+fn workspace_secret_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../secrets/google-service-account.json")
+}
+
+pub fn credential_search_paths() -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    if let Ok(from_env) = std::env::var("TBOOKS_GOOGLE_SA_PATH") {
+        let trimmed = from_env.trim();
+        if !trimmed.is_empty() {
+            paths.push(PathBuf::from(trimmed));
+        }
+    }
+    paths.push(credentials_path());
+    paths.push(workspace_secret_path());
+    paths
+}
+
 pub fn credentials_exist() -> bool {
-    credentials_path().is_file()
+    if let Ok(raw) = std::env::var("TBOOKS_GOOGLE_SA_JSON") {
+        if !raw.trim().is_empty() {
+            return true;
+        }
+    }
+    credential_search_paths().iter().any(|p| p.is_file())
 }
 
 pub fn parse_sheet_id(input: &str) -> String {
@@ -112,14 +135,26 @@ pub fn parse_service_account(raw: &str) -> Result<ServiceAccount> {
     })
 }
 
-pub fn load_service_account() -> Result<ServiceAccount> {
-    if !credentials_exist() {
-        return Err(BooksError::from(
-            "Google credentials not found at %LOCALAPPDATA%/T-Books/credentials.json.",
-        ));
+fn read_service_account_json() -> Result<String> {
+    if let Ok(raw) = std::env::var("TBOOKS_GOOGLE_SA_JSON") {
+        let trimmed = raw.trim();
+        if !trimmed.is_empty() {
+            return Ok(trimmed.to_string());
+        }
     }
-    let raw = std::fs::read_to_string(credentials_path())
-        .map_err(|_| BooksError::from("Could not read credentials.json on this PC."))?;
+    for path in credential_search_paths() {
+        if path.is_file() {
+            return std::fs::read_to_string(&path)
+                .map_err(|_| BooksError::from("Could not read the Google service account file on this PC."));
+        }
+    }
+    Err(BooksError::from(
+        "Google credentials not found at %LOCALAPPDATA%/T-Books/credentials.json.",
+    ))
+}
+
+pub fn load_service_account() -> Result<ServiceAccount> {
+    let raw = read_service_account_json()?;
     parse_service_account(&raw)
 }
 
@@ -150,7 +185,7 @@ fn sign_jwt(account: &ServiceAccount) -> Result<String> {
     let iat = now_unix();
     let claims = SaClaims {
         iss: account.client_email.clone(),
-        scope: SHEETS_SCOPE.to_string(),
+        scope: GOOGLE_SCOPE.to_string(),
         aud: TOKEN_URI_DEFAULT.to_string(),
         iat,
         exp: iat + 3600,
@@ -182,7 +217,7 @@ fn access_token(account: &ServiceAccount) -> Result<String> {
             .map_err(|_| BooksError::from("Could not lock the Google token cache on this PC."))?;
         if let Some(cached) = cache.as_ref() {
             if cached.iss == account.client_email
-                && cached.scope == SHEETS_SCOPE
+                && cached.scope == GOOGLE_SCOPE
                 && cached.exp > now_unix() + 60
             {
                 return Ok(cached.token.clone());
@@ -232,7 +267,7 @@ fn access_token(account: &ServiceAccount) -> Result<String> {
     if let Ok(mut cache) = token_cache().lock() {
         *cache = Some(CachedToken {
             iss: account.client_email.clone(),
-            scope: SHEETS_SCOPE.to_string(),
+            scope: GOOGLE_SCOPE.to_string(),
             token: token.clone(),
             exp,
         });
@@ -345,12 +380,12 @@ fn parse_values_body(body: &str) -> Result<Vec<Vec<String>>> {
         .collect())
 }
 
-pub fn fetch_sheet_values(account: &ServiceAccount, tab: &str) -> Result<Vec<Vec<String>>> {
+fn get_values(account: &ServiceAccount, spreadsheet_id: &str, encoded_range: &str, tab: &str) -> Result<Vec<Vec<String>>> {
     let token = access_token(account)?;
     let url = format!(
         "https://sheets.googleapis.com/v4/spreadsheets/{}/values/{}?majorDimension=ROWS&valueRenderOption=FORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING",
-        account.spreadsheet_id,
-        encode_range(tab)
+        spreadsheet_id,
+        encoded_range
     );
     let auth = format!("Bearer {token}");
     let response = agent()
@@ -373,58 +408,57 @@ pub fn fetch_sheet_values(account: &ServiceAccount, tab: &str) -> Result<Vec<Vec
             "Could not reach Google Sheets from this PC.",
         )),
     }
+}
+
+pub fn fetch_values_on(
+    account: &ServiceAccount,
+    spreadsheet_id: &str,
+    tab: &str,
+) -> Result<Vec<Vec<String>>> {
+    get_values(account, spreadsheet_id, &encode_range(tab), tab)
+}
+
+pub fn fetch_sheet_values(account: &ServiceAccount, tab: &str) -> Result<Vec<Vec<String>>> {
+    fetch_values_on(account, &account.spreadsheet_id, tab)
 }
 
 pub fn fetch_access_values(account: &ServiceAccount) -> Result<Vec<Vec<String>>> {
-    fetch_sheet_values(account, ACCESS_TAB)
+    let target = crate::hive_plan::target_for_kind(crate::hive::KIND_ACCESS)?;
+    fetch_values_on(account, &target.spreadsheet_id, &target.tab)
 }
 
+pub fn fetch_a1_on(
+    account: &ServiceAccount,
+    spreadsheet_id: &str,
+    tab: &str,
+    a1: &str,
+) -> Result<Vec<Vec<String>>> {
+    get_values(account, spreadsheet_id, &encode_a1(tab, Some(a1)), tab)
+}
+
+#[allow(dead_code)]
 pub fn fetch_sheet_a1(account: &ServiceAccount, tab: &str, a1: &str) -> Result<Vec<Vec<String>>> {
-    let token = access_token(account)?;
-    let url = format!(
-        "https://sheets.googleapis.com/v4/spreadsheets/{}/values/{}?majorDimension=ROWS&valueRenderOption=FORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING",
-        account.spreadsheet_id,
-        encode_a1(tab, Some(a1))
-    );
-    let auth = format!("Bearer {token}");
-    let response = agent()
-        .get(&url)
-        .set("Authorization", &auth)
-        .set("Accept", "application/json")
-        .call();
-    match response {
-        Ok(resp) => {
-            let body = resp
-                .into_string()
-                .map_err(|_| BooksError::from("Google Sheets returned an unreadable body."))?;
-            parse_values_body(&body)
-        }
-        Err(ureq::Error::Status(code, resp)) => {
-            let body = resp.into_string().unwrap_or_default();
-            Err(BooksError::from(google_http_message(code, &body, tab)))
-        }
-        Err(_) => Err(BooksError::from(
-            "Could not reach Google Sheets from this PC.",
-        )),
-    }
+    fetch_a1_on(account, &account.spreadsheet_id, tab, a1)
 }
 
-fn values_url(account: &ServiceAccount, tab: &str, a1: &str) -> String {
+fn values_url_on(spreadsheet_id: &str, tab: &str, a1: &str) -> String {
     format!(
         "https://sheets.googleapis.com/v4/spreadsheets/{}/values/{}",
-        account.spreadsheet_id,
+        spreadsheet_id,
         encode_a1(tab, Some(a1))
     )
 }
 
-pub fn update_sheet_row(
+pub fn update_row_on(
     account: &ServiceAccount,
+    spreadsheet_id: &str,
     tab: &str,
     a1: &str,
     cells: &[String],
 ) -> Result<()> {
+    refuse_raw_write(spreadsheet_id, tab)?;
     let token = access_token(account)?;
-    let url = format!("{}?valueInputOption=RAW", values_url(account, tab, a1));
+    let url = format!("{}?valueInputOption=RAW", values_url_on(spreadsheet_id, tab, a1));
     let body = serde_json::json!({
         "range": format!("'{tab}'!{a1}"),
         "majorDimension": "ROWS",
@@ -449,11 +483,27 @@ pub fn update_sheet_row(
     }
 }
 
-pub fn append_sheet_row(account: &ServiceAccount, tab: &str, cells: &[String]) -> Result<()> {
+#[allow(dead_code)]
+pub fn update_sheet_row(
+    account: &ServiceAccount,
+    tab: &str,
+    a1: &str,
+    cells: &[String],
+) -> Result<()> {
+    update_row_on(account, &account.spreadsheet_id, tab, a1, cells)
+}
+
+pub fn append_row_on(
+    account: &ServiceAccount,
+    spreadsheet_id: &str,
+    tab: &str,
+    cells: &[String],
+) -> Result<()> {
+    refuse_raw_write(spreadsheet_id, tab)?;
     let token = access_token(account)?;
     let url = format!(
         "{}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS",
-        values_url(account, tab, "A:BL")
+        values_url_on(spreadsheet_id, tab, "A:BL")
     );
     let body = serde_json::json!({
         "majorDimension": "ROWS",
@@ -478,6 +528,11 @@ pub fn append_sheet_row(account: &ServiceAccount, tab: &str, cells: &[String]) -
     }
 }
 
+#[allow(dead_code)]
+pub fn append_sheet_row(account: &ServiceAccount, tab: &str, cells: &[String]) -> Result<()> {
+    append_row_on(account, &account.spreadsheet_id, tab, cells)
+}
+
 pub fn is_missing_tab_error(message: &str) -> bool {
     let m = message.to_ascii_lowercase();
     m.contains("unable to parse range")
@@ -487,15 +542,16 @@ pub fn is_missing_tab_error(message: &str) -> bool {
 }
 
 /// Owner bootstrap: create the tab with headers only. Never copies data rows.
-pub fn create_tab_with_headers(
+pub fn create_tab_with_headers_on(
     account: &ServiceAccount,
+    spreadsheet_id: &str,
     tab: &str,
     headers: &[String],
 ) -> Result<()> {
+    refuse_raw_write(spreadsheet_id, tab)?;
     let token = access_token(account)?;
     let url = format!(
-        "https://sheets.googleapis.com/v4/spreadsheets/{}:batchUpdate",
-        account.spreadsheet_id
+        "https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}:batchUpdate"
     );
     let body = serde_json::json!({
         "requests": [{
@@ -529,9 +585,32 @@ pub fn create_tab_with_headers(
     if headers.is_empty() {
         return Ok(());
     }
-    let last = (b'A' + (headers.len().saturating_sub(1) as u8).min(25)) as char;
+    let last = column_letter(headers.len().saturating_sub(1));
     let a1 = format!("A1:{last}1");
-    update_sheet_row(account, tab, &a1, headers)
+    update_row_on(account, spreadsheet_id, tab, &a1, headers)
+}
+
+fn column_letter(index: usize) -> String {
+    let mut n = index as i32;
+    let mut out = String::new();
+    loop {
+        let rem = n % 26;
+        out.insert(0, (b'A' + rem as u8) as char);
+        n = n / 26 - 1;
+        if n < 0 {
+            break;
+        }
+    }
+    out
+}
+
+#[allow(dead_code)]
+pub fn create_tab_with_headers(
+    account: &ServiceAccount,
+    tab: &str,
+    headers: &[String],
+) -> Result<()> {
+    create_tab_with_headers_on(account, &account.spreadsheet_id, tab, headers)
 }
 
 #[cfg(test)]
@@ -590,5 +669,69 @@ mod tests {
             "Check the Sheet ID and that a tab named Access exists."
         ));
         assert!(!is_missing_tab_error("Could not reach Google Sheets from this PC."));
+    }
+
+    #[test]
+    fn update_refuses_raw_archive_without_calling_google() {
+        let account = parse_service_account(
+            r#"{
+              "client_email": "sa@example.com",
+              "private_key": "-----BEGIN PRIVATE KEY-----\nMIIB\n-----END PRIVATE KEY-----\n"
+            }"#,
+        )
+        .unwrap();
+        let err = update_row_on(
+            &account,
+            "1J9ZuNL1uZ7DmqOGIZojuOCMeYp9VnC-SEow6YG86cgE",
+            "Voucher_Raw_Data",
+            "A1",
+            &["20".into()],
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("read-only"));
+        let err = append_row_on(
+            &account,
+            "1J9ZuNL1uZ7DmqOGIZojuOCMeYp9VnC-SEow6YG86cgE",
+            "Voucher_Raw_Data",
+            &["VOUCHER_1001".into()],
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("read-only"));
+    }
+
+    /// Optional live READ of Voucher_Raw_Data. Never writes. Skips without a service account.
+    #[test]
+    fn optional_live_read_of_raw_archive_never_writes() {
+        crate::hive_plan::refuse_raw_write(crate::DEFAULT_SPREADSHEET_ID, crate::VOUCHER_RAW_TAB)
+            .unwrap_err();
+        if !credentials_exist() {
+            eprintln!("skip live Google: no TBOOKS_GOOGLE_SA_JSON / credentials.json");
+            return;
+        }
+        let account = match load_service_account() {
+            Ok(a) => a,
+            Err(err) => {
+                if std::env::var("TBOOKS_LIVE_GOOGLE").ok().as_deref() == Some("1") {
+                    panic!("{}", err);
+                }
+                eprintln!("skip live Google: could not parse service account");
+                return;
+            }
+        };
+        let map = crate::hive_plan::load_map().unwrap();
+        match fetch_values_on(&account, &map.raw_source.spreadsheet_id, &map.raw_source.tab) {
+            Ok(values) => {
+                let n = values.len();
+                assert!(n < 500_000, "unexpectedly huge grid");
+                eprintln!("live Google READ Voucher_Raw_Data: {n} rows (cells not logged)");
+            }
+            Err(err) => {
+                let message = err.to_string();
+                if std::env::var("TBOOKS_LIVE_GOOGLE").ok().as_deref() == Some("1") {
+                    panic!("{message}");
+                }
+                eprintln!("skip live Google READ: {message}");
+            }
+        }
     }
 }

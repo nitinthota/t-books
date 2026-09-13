@@ -8,9 +8,9 @@ PC
  └─ Rust        ──writes─►  SQLite
                   │
                   └── only on explicit commands, if online:
-                        Refresh Access
-                        Refresh Voucher_Raw_Data
-                        Submit one voucher
+                        Refresh Access (Loopbooks — Access)
+                        Refresh Voucher_Raw_Data (read-only archive)
+                        Submit one voucher → Voucher register
                         Check for updates
 ```
 
@@ -30,15 +30,22 @@ PC
 4. **SQLite** — `src-tauri/src/db.rs`  
    Schema version in `app_meta`. Additive migrations. WAL.
 
-5. **Google** — `src-tauri/src/sheets.rs`  
-   Service account JWT from `credentials.json` on this PC. Read Access / `Voucher_Raw_Data`. Write one voucher row on Submit. Write Access rows only from the owner.
+## Google
+
+Service account JWT from `credentials.json` on this PC (or `TBOOKS_GOOGLE_SA_JSON` / gitignored `secrets/google-service-account.json`). Views never call Google.
+
+- **Read-only archive:** `Voucher_Raw_Data` on the source spreadsheet. Never written.
+- **Live hive:** Loopbooks Drive workbooks in `src-tauri/hive-map.json` (Access, Voucher register, Payments, Purchase, …).
+- Access write: owner, one row. Passwords hashed locally; sheet has Name / Email / Role / Active / Account_Type.
+
+See [SHEET_HIVE_PLAN.md](SHEET_HIVE_PLAN.md).
 
 ## What lives where
 
 | Data | Where | Refresh |
 |---|---|---|
 | Who can sign in | Access tab + `access_cache` | Manual |
-| Voucher register | `Voucher_Raw_Data` + `vouchers` | Manual, dirty guard |
+| Voucher register | `Voucher_Raw_Data` (history, read-only) + `Loopbooks — Voucher register` + local `vouchers` | Refresh reads archive; Submit writes register |
 | Sales / purchase / HR / inventory / logistics / documents | Local tables only | Never deleted |
 | Passwords | `users_local.password_hash` | Never in Google |
 

@@ -17,6 +17,10 @@ if (!found) {
   process.exit(1);
 }
 mkdirSync(outDir, { recursive: true });
+if (found.toLowerCase().includes("credentials")) {
+  console.error("Refusing to copy a credentials-named file as the installer.");
+  process.exit(1);
+}
 const dest = join(outDir, "T-Books-Setup.exe");
 copyFileSync(join(nsis, found), dest);
 console.log(dest);

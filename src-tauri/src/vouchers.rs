@@ -12,8 +12,7 @@ use crate::core::business_rules::{
 use crate::db::LocalBooks;
 use crate::online::is_online;
 use crate::sheets::{
-    create_tab_with_headers, credentials_exist, fetch_sheet_values, is_missing_tab_error,
-    load_service_account,
+    credentials_exist, fetch_values_on, is_missing_tab_error, load_service_account,
 };
 use crate::{BooksError, Result, VOUCHER_RAW_TAB};
 
@@ -636,16 +635,15 @@ fn require_online_and_credentials() -> Result<()> {
     Ok(())
 }
 
-fn fetch_parsed_from_google(allow_bootstrap: bool) -> Result<ParseReport> {
+fn fetch_parsed_from_google(_allow_bootstrap: bool) -> Result<ParseReport> {
     require_online_and_credentials()?;
     let account = load_service_account()?;
-    match fetch_sheet_values(&account, VOUCHER_RAW_TAB) {
+    let map = crate::hive_plan::load_map()?;
+    match fetch_values_on(&account, &map.raw_source.spreadsheet_id, &map.raw_source.tab) {
         Ok(values) => Ok(parse_voucher_values(&values)),
-        Err(err) if allow_bootstrap && is_missing_tab_error(&err.to_string()) => {
-            let headers: Vec<String> = crate::hive::tab_headers(crate::hive::KIND_VOUCHER);
-            create_tab_with_headers(&account, VOUCHER_RAW_TAB, &headers)?;
-            Ok(parse_voucher_values(&[headers]))
-        }
+        Err(err) if is_missing_tab_error(&err.to_string()) => Err(BooksError::from(
+            "Voucher_Raw_Data is missing. The archive was not created or changed.",
+        )),
         Err(err) => Err(err),
     }
 }

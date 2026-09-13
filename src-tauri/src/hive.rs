@@ -19,7 +19,7 @@ pub const KIND_LOGISTICS: &str = "logistics";
 pub const KIND_DOCUMENT: &str = "document";
 pub const KIND_ACCESS: &str = "access";
 
-pub const ACCESS_HEADERS: &[&str] = &["Name", "Email", "Role", "Active"];
+pub const ACCESS_HEADERS: &[&str] = &["Name", "Email", "Role", "Active", "Account_Type"];
 pub const VOUCHER_HEADERS: &[&str] = &[
     "serial_no",
     "voucher_date",
@@ -48,6 +48,22 @@ pub const HIVE_KINDS: &[&str] = &[
 /// `{KEY} was just updated by another user. Reload and submit again.`
 pub fn hive_conflict_message(key: &str) -> String {
     format!("{key} was just updated by another user. Reload and submit again.")
+}
+
+/// Dummy office keys allowed in live Google write tests. Never a GSTIN, bank, or real voucher.
+pub fn is_live_dummy_key(key: &str) -> bool {
+    matches!(
+        key.trim(),
+        "PUR-0001"
+            | "PUR-0002"
+            | "PAY-0001"
+            | "SAL-0001"
+            | "CUST_01"
+            | "VEND_02"
+            | "VOUCHER_1001"
+            | "PO-1@CUST_01"
+            | "PO-1@CUST_02"
+    )
 }
 
 pub fn sales_po_hive_key(po_number: &str, project: &str) -> String {
@@ -430,12 +446,13 @@ pub fn pending_payload_json(kind: &str, key: &str) -> String {
     serde_json::json!({ "kind": kind, "key": key }).to_string()
 }
 
+/// Live hive tab titles (Loopbooks workbooks). The archive tab is `VOUCHER_RAW_TAB`.
 pub fn tab_name(kind: &str) -> &'static str {
     match kind {
         KIND_ACCESS => "Access",
-        KIND_VOUCHER => "Voucher_Raw_Data",
+        KIND_VOUCHER => "Voucher register",
         KIND_PURCHASE => "Purchase",
-        KIND_PAYMENT => "Payments",
+        KIND_PAYMENT => "Purchase payments",
         KIND_SALARY => "Payroll",
         KIND_SALES_PO => "Sales_PO",
         KIND_INVENTORY => "Inventory",
@@ -735,6 +752,18 @@ mod tests {
         assert_eq!(HIVE_KINDS.len(), 9);
         assert!(HIVE_KINDS.contains(&KIND_SALES_PO));
         assert_eq!(tab_name(KIND_SALES_PO), "Sales_PO");
+        assert_eq!(tab_name(KIND_VOUCHER), "Voucher register");
+        assert_eq!(tab_name(KIND_PAYMENT), "Purchase payments");
         assert_eq!(sales_po_hive_key("PO-1", "CUST_01"), "PO-1@CUST_01");
+    }
+
+    #[test]
+    fn live_dummy_keys_are_the_listed_tokens_only() {
+        assert!(is_live_dummy_key("PUR-0001"));
+        assert!(is_live_dummy_key("PAY-0001"));
+        assert!(is_live_dummy_key("PO-1@CUST_01"));
+        assert!(!is_live_dummy_key("27AAACT1234A1Z5"));
+        assert!(!is_live_dummy_key("20"));
+        assert!(!is_live_dummy_key("Voucher 20"));
     }
 }

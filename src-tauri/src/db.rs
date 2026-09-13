@@ -162,7 +162,8 @@ fn migrate(conn: &Connection) -> Result<()> {
           name TEXT,
           role TEXT,
           active TEXT,
-          last_synced TEXT
+          last_synced TEXT,
+          account_type TEXT
         );
 
         CREATE TABLE IF NOT EXISTS vendors (
@@ -431,6 +432,7 @@ fn migrate(conn: &Connection) -> Result<()> {
     ensure_column(conn, "documents", "is_dirty", "INTEGER NOT NULL DEFAULT 0")?;
     ensure_column(conn, "documents", "hive_rev", "INTEGER NOT NULL DEFAULT 0")?;
     ensure_column(conn, "documents", "source_hash", "TEXT")?;
+    ensure_column(conn, "access_cache", "account_type", "TEXT")?;
     conn.execute(
         "UPDATE vouchers SET is_dirty = 1 WHERE COALESCE(dirty, 0) = 1 AND COALESCE(is_dirty, 0) = 0",
         [],
@@ -499,7 +501,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, "9");
+        assert_eq!(version, "10");
         let logic: String = books
             .conn()
             .query_row(

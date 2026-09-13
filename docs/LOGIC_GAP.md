@@ -66,12 +66,11 @@ Hive law: **views never call Google.** Save = SQLite + dirty. Submit = one hive 
 | `login` | Access | read (prefetch if online) | Yes — “Login online → read Access only” |
 | `set_password` | Access | read (prefetch if online) | Yes — same |
 | `refresh_access` | Access | read whole tab | Yes — explicit |
-| `refresh_vouchers` | `Voucher_Raw_Data` | read whole tab | Yes — explicit; dirty guard is **vouchers only** |
+| `refresh_vouchers` | `Voucher_Raw_Data` (archive, read-only) | read whole tab | Yes — explicit; dirty guard lists dirty keys |
 | `force_refresh_vouchers` | `Voucher_Raw_Data` | read, discard dirty vouchers | Yes — explicit discard |
-| `submit_voucher` | `Voucher_Raw_Data` | **one row** write (CAS on `source_hash`) | Yes — explicit; integer column-A only |
-| `reload_voucher` | `Voucher_Raw_Data` | **one row** read, replace local | Yes — conflict recovery |
-
-Access **write** (owner add/disable one row): **no Tauri command.** Gap.
+| `submit_voucher` | Voucher register (never `Voucher_Raw_Data`) | **one row** write | Yes — archive is read-only |
+| `reload_voucher` | `Voucher_Raw_Data` (read-only) | **one row** read, replace local | Yes — conflict recovery from archive |
+| `write_access_row` | Loopbooks — Access | one row write | Yes — owner only; no password column |
 
 ### Commands that do **not** touch Sheets (views / local)
 

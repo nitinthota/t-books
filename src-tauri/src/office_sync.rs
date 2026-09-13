@@ -4,14 +4,15 @@
 use crate::core::business_rules::sha256_hex;
 use crate::db::LocalBooks;
 use crate::hive::{
-    hive_conflict_message, sales_po_hive_key, submit_hive_row, tab_headers, tab_name, CasOutcome,
-    EnsureTab, Hive, HiveRow, HIVE_KINDS, KIND_DOCUMENT, KIND_INVENTORY, KIND_LOGISTICS,
+    hive_conflict_message, is_live_dummy_key, sales_po_hive_key, submit_hive_row, tab_name,
+    CasOutcome, EnsureTab, Hive, HiveRow, KIND_DOCUMENT, KIND_INVENTORY, KIND_LOGISTICS,
     KIND_PAYMENT, KIND_PURCHASE, KIND_SALARY, KIND_SALES_PO,
 };
 use crate::online::is_online;
+use crate::hive_plan::{report_headers, status_targets, target_for_kind};
 use crate::sheets::{
-    append_sheet_row, create_tab_with_headers, credentials_exist, fetch_sheet_values,
-    is_missing_tab_error, load_service_account, update_sheet_row, ServiceAccount,
+    append_row_on, create_tab_with_headers_on, credentials_exist, fetch_values_on,
+    is_missing_tab_error, load_service_account, update_row_on, ServiceAccount,
 };
 use crate::{BooksError, Result};
 
@@ -284,7 +285,7 @@ pub fn submit_office_with(
 ) -> Result<CasOutcome> {
     let (cells, base_fp, base_rev) = office_cells(books, kind, key)?;
     let new_fp = fingerprint_cells(&cells);
-    match hive.ensure_tab(kind, &tab_headers(kind)) {
+    match hive.ensure_tab(kind, &report_headers(kind)) {
         Ok(EnsureTab::Exists) => {}
         Ok(EnsureTab::BootstrappedHeaders) => {
             if !allow_bootstrap {
@@ -330,28 +331,50 @@ impl GoogleOfficeHive {
         })
     }
 
+    pub fn connect_bootstrap() -> Result<Self> {
+        let mut hive = Self::connect()?;
+        hive.fail_if_missing = false;
+        Ok(hive)
+    }
+
     fn probe(&self, kind: &str) -> HiveTabStatus {
-        let tab = tab_name(kind).to_string();
-        match fetch_sheet_values(&self.account, &tab) {
+        let target = match target_for_kind(kind) {
+            Ok(t) => t,
+            Err(err) => {
+                return HiveTabStatus {
+                    kind: kind.to_string(),
+                    tab: tab_name(kind).to_string(),
+                    present: false,
+                    row_count: 0,
+                    writable: false,
+                    error: Some(err.to_string()),
+                };
+            }
+        };
+        let label = format!("{} / {}", target.workbook_title, target.tab);
+        match fetch_values_on(&self.account, &target.spreadsheet_id, &target.tab) {
             Ok(values) => HiveTabStatus {
                 kind: kind.to_string(),
-                tab,
+                tab: label,
                 present: true,
                 row_count: parse_tab_rows(&values, kind).len() as i64,
+                writable: target.writable,
                 error: None,
             },
             Err(err) if is_missing_tab_error(&err.to_string()) => HiveTabStatus {
                 kind: kind.to_string(),
-                tab,
+                tab: label,
                 present: false,
                 row_count: 0,
+                writable: target.writable,
                 error: None,
             },
             Err(err) => HiveTabStatus {
                 kind: kind.to_string(),
-                tab,
+                tab: label,
                 present: false,
                 row_count: 0,
+                writable: target.writable,
                 error: Some(err.to_string()),
             },
         }
@@ -386,8 +409,8 @@ fn parse_tab_rows(values: &[Vec<String>], kind: &str) -> Vec<HiveRow> {
 
 impl Hive for GoogleOfficeHive {
     fn get_row(&self, kind: &str, key: &str) -> Result<Option<HiveRow>> {
-        let tab = tab_name(kind);
-        let values = match fetch_sheet_values(&self.account, tab) {
+        let target = target_for_kind(kind)?;
+        let values = match fetch_values_on(&self.account, &target.spreadsheet_id, &target.tab) {
             Ok(v) => v,
             Err(err) if is_missing_tab_error(&err.to_string()) => return Ok(None),
             Err(err) => return Err(err),
@@ -406,8 +429,13 @@ impl Hive for GoogleOfficeHive {
         cells: &[String],
         new_fp: &str,
     ) -> Result<CasOutcome> {
-        let tab = tab_name(kind);
-        let values = match fetch_sheet_values(&self.account, tab) {
+        let target = target_for_kind(kind)?;
+        if !target.writable {
+            return Err(BooksError::from(
+                "Voucher_Raw_Data is read-only. Write the structured hive instead. The original register was not changed.",
+            ));
+        }
+        let values = match fetch_values_on(&self.account, &target.spreadsheet_id, &target.tab) {
             Ok(v) => v,
             Err(err) if is_missing_tab_error(&err.to_string()) => {
                 return Err(BooksError::from(missing_tab_message(kind)));
@@ -436,7 +464,7 @@ impl Hive for GoogleOfficeHive {
             }
             let mut row = body;
             row.push("1".into());
-            append_sheet_row(&self.account, tab, &row)?;
+            append_row_on(&self.account, &target.spreadsheet_id, &target.tab, &row)?;
             return Ok(CasOutcome::Ok {
                 key: key.to_string(),
                 fp: new_fp.to_string(),
@@ -461,7 +489,13 @@ impl Hive for GoogleOfficeHive {
         let mut written = body;
         written.push(next_rev.to_string());
         let last = format!("A{sheet_row}:Z{sheet_row}");
-        update_sheet_row(&self.account, tab, &last, &written)?;
+        update_row_on(
+            &self.account,
+            &target.spreadsheet_id,
+            &target.tab,
+            &last,
+            &written,
+        )?;
         Ok(CasOutcome::Ok {
             key: key.to_string(),
             fp: new_fp.to_string(),
@@ -470,8 +504,8 @@ impl Hive for GoogleOfficeHive {
     }
 
     fn list_keys(&self, kind: &str) -> Result<Vec<String>> {
-        let tab = tab_name(kind);
-        match fetch_sheet_values(&self.account, tab) {
+        let target = target_for_kind(kind)?;
+        match fetch_values_on(&self.account, &target.spreadsheet_id, &target.tab) {
             Ok(values) => Ok(parse_tab_rows(&values, kind).into_iter().map(|r| r.key).collect()),
             Err(err) if is_missing_tab_error(&err.to_string()) => Ok(Vec::new()),
             Err(err) => Err(err),
@@ -479,18 +513,74 @@ impl Hive for GoogleOfficeHive {
     }
 
     fn ensure_tab(&mut self, kind: &str, headers: &[String]) -> Result<EnsureTab> {
-        let tab = tab_name(kind);
-        match fetch_sheet_values(&self.account, tab) {
+        let target = target_for_kind(kind)?;
+        if !target.writable {
+            return Err(BooksError::from(
+                "Voucher_Raw_Data is read-only. Owner cannot bootstrap the archive tab.",
+            ));
+        }
+        match fetch_values_on(&self.account, &target.spreadsheet_id, &target.tab) {
             Ok(_) => Ok(EnsureTab::Exists),
             Err(err) if is_missing_tab_error(&err.to_string()) => {
                 if self.fail_if_missing {
                     return Err(BooksError::from(missing_tab_message(kind)));
                 }
-                create_tab_with_headers(&self.account, tab, headers)?;
+                let heads = if headers.is_empty() {
+                    report_headers(kind)
+                } else {
+                    headers.to_vec()
+                };
+                create_tab_with_headers_on(
+                    &self.account,
+                    &target.spreadsheet_id,
+                    &target.tab,
+                    &heads,
+                )?;
                 Ok(EnsureTab::BootstrappedHeaders)
             }
             Err(err) => Err(err),
         }
+    }
+}
+
+impl GoogleOfficeHive {
+    /// Blank a dummy test row after a live write. Refuses anything that is not a listed dummy key.
+    pub fn blank_dummy_key(&mut self, kind: &str, key: &str) -> Result<()> {
+        if !is_live_dummy_key(key) {
+            return Err(BooksError::from(
+                "Live tests may only blank dummy keys (PUR-0001, PAY-0001, CUST_01, …).",
+            ));
+        }
+        let target = target_for_kind(kind)?;
+        crate::hive_plan::refuse_raw_write(&target.spreadsheet_id, &target.tab)?;
+        if !target.writable {
+            return Err(BooksError::from(
+                "Voucher_Raw_Data is read-only. Write the structured hive instead. The original register was not changed.",
+            ));
+        }
+        let values = match fetch_values_on(&self.account, &target.spreadsheet_id, &target.tab) {
+            Ok(v) => v,
+            Err(err) if is_missing_tab_error(&err.to_string()) => return Ok(()),
+            Err(err) => return Err(err),
+        };
+        let existing: Vec<u32> = parse_tab_rows(&values, kind)
+            .into_iter()
+            .enumerate()
+            .filter(|(_, r)| r.key.eq_ignore_ascii_case(key))
+            .map(|(i, _)| (i as u32) + 2)
+            .collect();
+        for sheet_row in existing {
+            let a1 = format!("A{sheet_row}:Z{sheet_row}");
+            let blanks = vec![String::new(); 26];
+            update_row_on(
+                &self.account,
+                &target.spreadsheet_id,
+                &target.tab,
+                &a1,
+                &blanks,
+            )?;
+        }
+        Ok(())
     }
 }
 
@@ -503,7 +593,7 @@ pub fn submit_office(
     let mut hive = GoogleOfficeHive::connect()?;
     hive.fail_if_missing = !allow_bootstrap;
     if allow_bootstrap {
-        match hive.ensure_tab(kind, &tab_headers(kind)) {
+        match hive.ensure_tab(kind, &report_headers(kind)) {
             Ok(EnsureTab::BootstrappedHeaders) => {
                 return Err(BooksError::from(format!(
                     "{} tab was created with headers only. Submit again.",
@@ -524,6 +614,7 @@ pub struct HiveTabStatus {
     pub tab: String,
     pub present: bool,
     pub row_count: i64,
+    pub writable: bool,
     pub error: Option<String>,
 }
 
@@ -535,6 +626,30 @@ pub struct HiveStatus {
     pub tabs: Vec<HiveTabStatus>,
 }
 
+fn plan_tab_placeholders(error: Option<String>) -> Vec<HiveTabStatus> {
+    match status_targets() {
+        Ok(targets) => targets
+            .into_iter()
+            .map(|t| HiveTabStatus {
+                kind: t.kind,
+                tab: format!("{} / {}", t.workbook_title, t.tab),
+                present: false,
+                row_count: 0,
+                writable: t.writable,
+                error: error.clone(),
+            })
+            .collect(),
+        Err(err) => vec![HiveTabStatus {
+            kind: "hive".into(),
+            tab: "Hive".into(),
+            present: false,
+            row_count: 0,
+            writable: false,
+            error: Some(err.to_string()),
+        }],
+    }
+}
+
 pub fn hive_status() -> HiveStatus {
     let online = is_online();
     let credentials_found = credentials_exist();
@@ -542,35 +657,18 @@ pub fn hive_status() -> HiveStatus {
         return HiveStatus {
             online,
             credentials_found,
-            tabs: HIVE_KINDS
-                .iter()
-                .map(|kind| HiveTabStatus {
-                    kind: (*kind).to_string(),
-                    tab: tab_name(kind).to_string(),
-                    present: false,
-                    row_count: 0,
-                    error: Some("This PC is offline. Cannot inspect hive tabs.".into()),
-                })
-                .collect(),
+            tabs: plan_tab_placeholders(Some(
+                "This PC is offline. Cannot inspect hive tabs.".into(),
+            )),
         };
     }
     if !credentials_found {
         return HiveStatus {
             online,
             credentials_found,
-            tabs: HIVE_KINDS
-                .iter()
-                .map(|kind| HiveTabStatus {
-                    kind: (*kind).to_string(),
-                    tab: tab_name(kind).to_string(),
-                    present: false,
-                    row_count: 0,
-                    error: Some(
-                        "Google credentials not found at %LOCALAPPDATA%/T-Books/credentials.json."
-                            .into(),
-                    ),
-                })
-                .collect(),
+            tabs: plan_tab_placeholders(Some(
+                "Google credentials not found at %LOCALAPPDATA%/T-Books/credentials.json.".into(),
+            )),
         };
     }
     let hive = match GoogleOfficeHive::connect() {
@@ -579,20 +677,14 @@ pub fn hive_status() -> HiveStatus {
             return HiveStatus {
                 online,
                 credentials_found,
-                tabs: HIVE_KINDS
-                    .iter()
-                    .map(|kind| HiveTabStatus {
-                        kind: (*kind).to_string(),
-                        tab: tab_name(kind).to_string(),
-                        present: false,
-                        row_count: 0,
-                        error: Some(err.to_string()),
-                    })
-                    .collect(),
+                tabs: plan_tab_placeholders(Some(err.to_string())),
             };
         }
     };
-    let tabs = HIVE_KINDS.iter().map(|kind| hive.probe(kind)).collect();
+    let tabs = match status_targets() {
+        Ok(targets) => targets.into_iter().map(|t| hive.probe(&t.kind)).collect(),
+        Err(err) => plan_tab_placeholders(Some(err.to_string())),
+    };
     HiveStatus {
         online,
         credentials_found,
@@ -601,16 +693,19 @@ pub fn hive_status() -> HiveStatus {
 }
 
 pub fn bootstrap_hive_tab(kind: &str) -> Result<String> {
-    if !HIVE_KINDS.contains(&kind) {
-        return Err(BooksError::from("Unknown hive kind."));
+    let target = target_for_kind(kind)?;
+    if !target.writable {
+        return Err(BooksError::from(
+            "Voucher_Raw_Data is read-only. Owner cannot bootstrap the archive tab.",
+        ));
     }
     let mut hive = GoogleOfficeHive::connect()?;
     hive.fail_if_missing = false;
-    match hive.ensure_tab(kind, &tab_headers(kind))? {
-        EnsureTab::Exists => Ok(format!("{} tab is already on the sheet.", tab_name(kind))),
+    match hive.ensure_tab(kind, &report_headers(kind))? {
+        EnsureTab::Exists => Ok(format!("{} tab is already on the sheet.", target.tab)),
         EnsureTab::BootstrappedHeaders => Ok(format!(
             "{} tab was created with headers only.",
-            tab_name(kind)
+            target.tab
         )),
     }
 }
@@ -618,7 +713,7 @@ pub fn bootstrap_hive_tab(kind: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hive::MemoryHive;
+    use crate::hive::{tab_headers, MemoryHive};
     use crate::office::{save_purchase_po, PurchasePoSave};
     use crate::open_memory;
 

@@ -41,7 +41,7 @@ Money: `calcPo`, `calcPayroll`, `calcSalarySlip`, `paymentStatus`, PUR-/PAY-/SAL
 
 Hive law: look = SQLite. Save = SQLite + dirty. Submit = one hive row, CAS. Refresh stops if this PC has dirty keys.
 
-Windows extra (Loopbook does not have this): hive tabs Access, Voucher_Raw_Data, Purchase, Payments, Payroll, Sales_PO, Inventory, Logistics, Documents. System screen can inspect tabs, owner can create headers only, outbox can retry.
+Windows extra (Loopbook does not have this): live hive tabs from `hive-map.json` (Access, Voucher register, Payments, Purchase, …). `Voucher_Raw_Data` is archive-only. System screen can inspect plan workbooks, owner can create headers only, outbox can retry.
 
 ---
 

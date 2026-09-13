@@ -5,18 +5,22 @@ use rusqlite::OptionalExtension;
 use crate::core::business_rules::parse_voucher_number;
 use crate::db::LocalBooks;
 use crate::hive::{
-    bump_pending_attempt, clear_pending, enqueue_submit, pending_payload_json, KIND_VOUCHER,
+    bump_pending_attempt, clear_pending, enqueue_submit, pending_payload_json, CasOutcome, Hive,
+    KIND_VOUCHER,
 };
+use crate::hive_plan::{load_map, refuse_raw_write, target_for_kind};
+use crate::migrate::register_cells_for_voucher;
+use crate::office_sync::GoogleOfficeHive;
 use crate::online::is_online;
 use crate::sheets::{
-    append_sheet_row, credentials_exist, fetch_sheet_a1, load_service_account, update_sheet_row,
+    append_row_on, credentials_exist, fetch_a1_on, load_service_account, update_row_on,
     ServiceAccount,
 };
 use crate::vouchers::{
     apply_one_force, fingerprint_parsed, load_local_voucher, mark_submitted, parse_one_voucher_row,
     voucher_to_sheet_row, ParsedVoucher,
 };
-use crate::{BooksError, Result, VOUCHER_RAW_TAB};
+use crate::{BooksError, Result};
 
 pub const SHEET_LAST_COL: &str = "BL";
 
@@ -107,11 +111,13 @@ impl VoucherSheet for MemorySheet {
     }
 }
 
+#[allow(dead_code)]
 pub struct GoogleSheet {
     account: ServiceAccount,
 }
 
 impl GoogleSheet {
+    #[allow(dead_code)]
     pub fn connect() -> Result<Self> {
         Ok(Self {
             account: load_service_account()?,
@@ -121,32 +127,85 @@ impl GoogleSheet {
 
 impl VoucherSheet for GoogleSheet {
     fn lookup(&mut self, voucher_number: i64) -> Result<Vec<RemoteMatch>> {
-        let column_a = fetch_sheet_a1(&self.account, VOUCHER_RAW_TAB, "A:A")?;
-        let mut hits = Vec::new();
-        for (i, row) in column_a.iter().enumerate() {
-            let sheet_row = (i as u32) + 1;
-            let a = row.first().map(|s| s.as_str()).unwrap_or("");
-            if parse_voucher_number(a) == Some(voucher_number) {
-                hits.push(sheet_row);
-            }
-        }
-        let mut out = Vec::with_capacity(hits.len());
-        for sheet_row in hits {
-            let a1 = format!("A{sheet_row}:{SHEET_LAST_COL}{sheet_row}");
-            let values = fetch_sheet_a1(&self.account, VOUCHER_RAW_TAB, &a1)?;
-            let cells = values.into_iter().next().unwrap_or_default();
-            out.push(RemoteMatch { sheet_row, cells });
-        }
-        Ok(out)
+        let target = target_for_kind(KIND_VOUCHER)?;
+        lookup_column_a(&self.account, &target.spreadsheet_id, &target.tab, voucher_number)
     }
 
     fn update_row(&mut self, sheet_row: u32, cells: &[String]) -> Result<()> {
+        let target = target_for_kind(KIND_VOUCHER)?;
         let a1 = format!("A{sheet_row}:{SHEET_LAST_COL}{sheet_row}");
-        update_sheet_row(&self.account, VOUCHER_RAW_TAB, &a1, cells)
+        update_row_on(
+            &self.account,
+            &target.spreadsheet_id,
+            &target.tab,
+            &a1,
+            cells,
+        )
     }
 
     fn append_row(&mut self, cells: &[String]) -> Result<()> {
-        append_sheet_row(&self.account, VOUCHER_RAW_TAB, cells)
+        let target = target_for_kind(KIND_VOUCHER)?;
+        append_row_on(&self.account, &target.spreadsheet_id, &target.tab, cells)
+    }
+}
+
+/// Read-only view of the archive tab. Writes are refused before Google is called.
+pub struct GoogleRawArchive {
+    account: ServiceAccount,
+}
+
+impl GoogleRawArchive {
+    pub fn connect() -> Result<Self> {
+        Ok(Self {
+            account: load_service_account()?,
+        })
+    }
+}
+
+fn lookup_column_a(
+    account: &ServiceAccount,
+    spreadsheet_id: &str,
+    tab: &str,
+    voucher_number: i64,
+) -> Result<Vec<RemoteMatch>> {
+    let column_a = fetch_a1_on(account, spreadsheet_id, tab, "A:A")?;
+    let mut hits = Vec::new();
+    for (i, row) in column_a.iter().enumerate() {
+        let sheet_row = (i as u32) + 1;
+        let a = row.first().map(|s| s.as_str()).unwrap_or("");
+        if parse_voucher_number(a) == Some(voucher_number) {
+            hits.push(sheet_row);
+        }
+    }
+    let mut out = Vec::with_capacity(hits.len());
+    for sheet_row in hits {
+        let a1 = format!("A{sheet_row}:{SHEET_LAST_COL}{sheet_row}");
+        let values = fetch_a1_on(account, spreadsheet_id, tab, &a1)?;
+        let cells = values.into_iter().next().unwrap_or_default();
+        out.push(RemoteMatch { sheet_row, cells });
+    }
+    Ok(out)
+}
+
+impl VoucherSheet for GoogleRawArchive {
+    fn lookup(&mut self, voucher_number: i64) -> Result<Vec<RemoteMatch>> {
+        let map = load_map()?;
+        lookup_column_a(
+            &self.account,
+            &map.raw_source.spreadsheet_id,
+            &map.raw_source.tab,
+            voucher_number,
+        )
+    }
+
+    fn update_row(&mut self, _sheet_row: u32, _cells: &[String]) -> Result<()> {
+        let map = load_map()?;
+        refuse_raw_write(&map.raw_source.spreadsheet_id, &map.raw_source.tab)
+    }
+
+    fn append_row(&mut self, _cells: &[String]) -> Result<()> {
+        let map = load_map()?;
+        refuse_raw_write(&map.raw_source.spreadsheet_id, &map.raw_source.tab)
     }
 }
 
@@ -267,10 +326,80 @@ pub fn submit_voucher_with(
     }
 }
 
+pub fn submit_voucher_hive(
+    books: &mut LocalBooks,
+    voucher_number: i64,
+    hive: &mut dyn Hive,
+) -> Result<SubmitOutcome> {
+    if voucher_number <= 0 {
+        return Err(BooksError::from("Voucher number must be a positive integer."));
+    }
+    let local = load_local_voucher(books, voucher_number)?;
+    let new_hash = fingerprint_parsed(&local.parsed);
+    let key = voucher_number.to_string();
+    let base_rev = crate::hive::get_hive_rev(books, voucher_number).unwrap_or(0);
+    let cells = register_cells_for_voucher(&local.parsed);
+    enqueue_submit(
+        books,
+        &key,
+        KIND_VOUCHER,
+        &pending_payload_json(KIND_VOUCHER, &key),
+        &local.source_hash,
+        base_rev,
+    )?;
+    match crate::hive::submit_hive_row(
+        books,
+        hive,
+        KIND_VOUCHER,
+        &key,
+        &local.source_hash,
+        base_rev,
+        &cells,
+        &new_hash,
+        &pending_payload_json(KIND_VOUCHER, &key),
+    ) {
+        Ok(CasOutcome::Ok { .. }) => {
+            if let Err(err) = mark_submitted(books, voucher_number, &new_hash) {
+                crate::log::event(
+                    crate::log::Level::Error,
+                    "submit",
+                    "write",
+                    Some(voucher_number),
+                    "local_update_failed",
+                );
+                return Err(err);
+            }
+            crate::log::event(
+                crate::log::Level::Info,
+                "submit",
+                "write",
+                Some(voucher_number),
+                "success",
+            );
+            Ok(SubmitOutcome::Ok { voucher_number })
+        }
+        Ok(CasOutcome::Conflict { message, .. }) => Ok(SubmitOutcome::Conflict {
+            voucher_number,
+            message,
+        }),
+        Err(err) => {
+            let _ = bump_pending_attempt(books, &key, KIND_VOUCHER, &err.to_string());
+            crate::log::event(
+                crate::log::Level::Error,
+                "submit",
+                "write",
+                Some(voucher_number),
+                "error",
+            );
+            Err(err)
+        }
+    }
+}
+
 pub fn submit_voucher(books: &mut LocalBooks, voucher_number: i64) -> Result<SubmitOutcome> {
     require_online_for_submit()?;
-    let mut sheet = GoogleSheet::connect()?;
-    submit_voucher_with(books, voucher_number, &mut sheet)
+    let mut hive = GoogleOfficeHive::connect()?;
+    submit_voucher_hive(books, voucher_number, &mut hive)
 }
 
 pub fn reload_voucher_with(
@@ -307,7 +436,7 @@ pub fn reload_voucher_with(
 
 pub fn reload_voucher(books: &mut LocalBooks, voucher_number: i64) -> Result<crate::VoucherView> {
     require_online_for_submit()?;
-    let mut sheet = GoogleSheet::connect()?;
+    let mut sheet = GoogleRawArchive::connect()?;
     reload_voucher_with(books, voucher_number, &mut sheet)?;
     crate::get_voucher(books, voucher_number)
 }
@@ -448,5 +577,39 @@ mod tests {
         let local = load_local_voucher(&books, 1001).unwrap();
         assert_ne!(local.parsed.vendor, "LOCAL");
         assert!(!local.is_dirty);
+    }
+
+    #[test]
+    fn hive_submit_writes_register_cells_not_raw() {
+        let mut books = open_memory().unwrap();
+        apply_voucher_rows(&mut books, &parse_voucher_values(&[voucher_row(1001, 0.4)])).unwrap();
+        let mut hive = crate::hive::MemoryHive::default();
+        hive.ensure_tab(
+            KIND_VOUCHER,
+            &crate::hive_plan::report_headers(KIND_VOUCHER),
+        )
+        .unwrap();
+        let out = submit_voucher_hive(&mut books, 1001, &mut hive).unwrap();
+        assert_eq!(out, SubmitOutcome::Ok { voucher_number: 1001 });
+        let row = hive.get_row(KIND_VOUCHER, "1001").unwrap().unwrap();
+        assert_eq!(row.cells[0], "1001");
+        assert!(hive.get_row("voucher_raw", "1001").unwrap().is_none());
+        assert!(!is_dirty_flag(&books, 1001).unwrap());
+    }
+
+    #[test]
+    fn raw_archive_sheet_refuses_writes() {
+        let account = crate::sheets::parse_service_account(
+            r#"{
+              "client_email": "sa@example.com",
+              "private_key": "-----BEGIN PRIVATE KEY-----\nMIIB\n-----END PRIVATE KEY-----\n"
+            }"#,
+        )
+        .unwrap();
+        let mut sheet = GoogleRawArchive { account };
+        let err = sheet.append_row(&["1001".into()]).unwrap_err();
+        assert!(err.to_string().contains("read-only"));
+        let err = sheet.update_row(2, &["1001".into()]).unwrap_err();
+        assert!(err.to_string().contains("read-only"));
     }
 }

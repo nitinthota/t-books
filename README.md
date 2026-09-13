@@ -7,7 +7,7 @@ Offline-first Windows ERP for a small office. Each person installs their own cop
 ## Features
 
 - **Offline-first** — open, edit, and save with no network
-- **Google Sheets sync (controlled)** — Access list and `Voucher_Raw_Data` only, on demand
+- **Google Sheets sync (controlled)** — Access (Loopbooks — Access), Refresh from read-only `Voucher_Raw_Data`, Submit to Voucher register
 - **Multi-user safe** — one voucher row per submit; fingerprint conflict if another PC changed that row
 - **Conflict detection** — dirty local vouchers block Refresh until Keep local / Discard local
 - **Local-first performance** — SQLite on disk, lists virtualized, aimed at a 4 GB laptop
@@ -20,7 +20,7 @@ Offline-first Windows ERP for a small office. Each person installs their own cop
 
 ## Setup
 
-Prerequisites: Node 22, Rust 1.77+, Windows 10/11 for the installer.
+Prerequisites: Node 22, Rust 1.77+. **The installer is Windows-only** (NSIS). Build `T-Books-Setup.exe` on Windows 10/11 or from the GitHub Actions `windows-nsis` job. Linux cannot emit that `.exe`.
 
 ```bash
 npm install
@@ -48,7 +48,7 @@ npm run tauri:build
 
 Uninstall removes the app only. It does **not** delete `%LOCALAPPDATA%\T-Books`.
 
-Place `credentials.json` (Google service account) in `%LOCALAPPDATA%\T-Books` on each PC that needs Access / Refresh / Submit. That file is never stored in this repository.
+Place `credentials.json` (Google service account) in `%LOCALAPPDATA%\T-Books` on each PC that needs Access / Refresh / Submit. That file is never stored in this repository. See [docs/SHEET_HIVE_PLAN.md](docs/SHEET_HIVE_PLAN.md) and `secrets/google-service-account.example.json`. `Voucher_Raw_Data` is read-only; structured hive workbooks hold live rows.
 
 ## Folders
 

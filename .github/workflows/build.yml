@@ -25,5 +25,47 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Packaging contract
+        run: node --experimental-strip-types --test tests/unit/release.test.ts
+
       - name: Rust library tests
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib
+
+  windows-nsis:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install JS dependencies
+        run: npm ci
+
+      - name: Refuse secrets in the tree
+        shell: bash
+        run: |
+          if [ -f credentials.json ] || [ -f secrets/google-service-account.json ]; then
+            echo "credentials.json must not be in the checkout used to build the installer."
+            exit 1
+          fi
+          if git ls-files | grep -E '(^|/)credentials\.json$|google-service-account\.json$'; then
+            echo "Tracked credential files are forbidden."
+            exit 1
+          fi
+
+      - name: Build T-Books-Setup.exe
+        run: npm run tauri:build
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: T-Books-Setup
+          path: dist/installers/T-Books-Setup.exe
+          if-no-files-found: error
+
