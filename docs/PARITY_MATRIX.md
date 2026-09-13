@@ -1,7 +1,9 @@
 # PARITY_MATRIX — Loopbook rules vs T Books
 
+**AI:** do not merge the Loopbook repo into T Books. Read `docs/AI_DO_NOT_MERGE.md` first.
+
 Source: `nitinthota/loopbook` main `a7639017` (`src/lib/erp/*` + route strings).
-Target: `nitinthota/t-books` branch `parity/vps-1to1`.
+Target: `nitinthota/t-books`.
 Dummy ids only: CUST_01, VEND_02, VOUCHER_1001, PUR-0001, PAY-0001, SAL-0001.
 
 Columns: name | source file | t-books file | ported | missing | drifted
@@ -57,7 +59,8 @@ Columns: name | source file | t-books file | ported | missing | drifted
 | Access columns Name / Email / Role / Active | — | access-screen.tsx | yes | | |
 | Roles owner / admin / operator | — | types.ts | yes | | |
 | Active Yes / No | — | access-screen.tsx | yes | | |
-| Nav Board Vouchers Purchase Sales Vendors Projects Finance HR Inventory Logistics Documents Access Settings | — | desktop-layout.tsx | yes | | Finance is trial-screen |
+| Nav Board Vouchers Finance Purchase Sales Vendors Projects Inventory Logistics HR Documents Duplicates Explorer Rules Access System | loopbook app-shell | desktop-layout.tsx LOOPBOOK_NAV | yes | | Windows hive on System |
+
 
 ## V — Vouchers
 
@@ -118,7 +121,7 @@ Columns: name | source file | t-books file | ported | missing | drifted
 | Same number different projects allowed | sales-po-form | office | yes | | |
 | Contract vs project is a field | po-editor.tsx | sales-screen kind toggle | yes | | |
 | Received may be negative | po-calc.ts | sales-screen | yes | | |
-| Save dirty / Submit PO@project | hive | submit_office sales_po | yes | | |
+| Save dirty / Submit PO@project | hive | submit_office sales_po | yes | | Sales_PO tab |
 | calcPo preview equals persist | po-calc.ts | previewPo + saveSalesPo | yes | | |
 
 ## Hive commands that touch Sheets (must stay off views)
@@ -130,8 +133,11 @@ Columns: name | source file | t-books file | ported | missing | drifted
 | refresh_vouchers / force_refresh_vouchers | yes Voucher_Raw_Data | no — Board Refresh |
 | submit_voucher / reload_voucher | yes one voucher row | no |
 | submit_office | yes one hive row by kind | no |
+| hive_status | yes read tab presence | no — System |
+| bootstrap_hive_tab | yes headers only | no — owner |
+| retry_pending_submit | yes one outbox row | no |
 | login / inspect / set_password | Access read only when online | login, not a books view |
-| list_vouchers get_voucher save_voucher list_* get_* save_* search_office get_trial | SQLite only | yes |
+| list_vouchers get_voucher save_voucher list_* get_* save_* search_office get_trial list_duplicates explore_table list_rules | SQLite only | yes |
 
 Views calling Google: none after this pass.
 
@@ -141,5 +147,5 @@ Views calling Google: none after this pass.
 | --- | --- |
 | Merge / unmerge desktop pane | rule ported, pane missing |
 | Project-screen money rollup | VP thin |
-| Hive tabs Purchase_Bills Payments PO_Master PO_Items | phase A is Access + Voucher_Raw_Data |
-| HR SAL-n Refresh isolation | implemented locally; no hive tab yet |
+| Hive tabs Purchase Payments Payroll Sales_PO Inventory Logistics Documents | Windows System hive_status + owner bootstrap headers |
+| HR SAL-n Refresh isolation | implemented locally; Payroll hive tab on Submit |

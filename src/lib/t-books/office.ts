@@ -203,20 +203,23 @@ function mapSales(row: SqlRow, withItems: boolean): SalesPo {
     totalValue: num(row, "total_value"),
     createdAt: text(row, "created_at"),
     updatedAt: text(row, "updated_at"),
+    isDirty: num(row, "is_dirty") !== 0,
     items: withItems ? loadItems("sales_po_items", id) : [],
   };
 }
 
 function listSalesPoLocal(): SalesPo[] {
   return all<SqlRow>(
-    `SELECT id, project, po_number, client, gst, total_value, created_at, updated_at
+    `SELECT id, project, po_number, client, gst, total_value, created_at, updated_at,
+            COALESCE(is_dirty,0) AS is_dirty
      FROM sales_po ORDER BY updated_at DESC, id DESC`,
   ).map((row) => mapSales(row, false));
 }
 
 function getSalesPoLocal(id: number): SalesPo {
   const rows = all<SqlRow>(
-    `SELECT id, project, po_number, client, gst, total_value, created_at, updated_at
+    `SELECT id, project, po_number, client, gst, total_value, created_at, updated_at,
+            COALESCE(is_dirty,0) AS is_dirty
      FROM sales_po WHERE id = ?`,
     [id],
   );
@@ -241,13 +244,13 @@ function saveSalesPoLocal(payload: SalesPoSave): SalesPo {
       if (id) {
         exec(
           `UPDATE sales_po SET project = ?, po_number = ?, client = ?, gst = ?, total_value = ?,
-           updated_at = datetime('now') WHERE id = ?`,
+           is_dirty = 1, updated_at = datetime('now') WHERE id = ?`,
           [project, poNumber, client, gst, total, id],
         );
       } else {
         exec(
-          `INSERT INTO sales_po (project, po_number, client, gst, total_value, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
+          `INSERT INTO sales_po (project, po_number, client, gst, total_value, is_dirty, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, 1, datetime('now'), datetime('now'))`,
           [project, poNumber, client, gst, total],
         );
         id = lastInsertId();

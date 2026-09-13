@@ -4,9 +4,9 @@
 use crate::core::business_rules::sha256_hex;
 use crate::db::LocalBooks;
 use crate::hive::{
-    hive_conflict_message, submit_hive_row, tab_headers, tab_name, CasOutcome, EnsureTab, Hive,
-    HiveRow, KIND_DOCUMENT, KIND_INVENTORY, KIND_LOGISTICS, KIND_PAYMENT,
-    KIND_PURCHASE, KIND_SALARY,
+    hive_conflict_message, sales_po_hive_key, submit_hive_row, tab_headers, tab_name, CasOutcome,
+    EnsureTab, Hive, HiveRow, HIVE_KINDS, KIND_DOCUMENT, KIND_INVENTORY, KIND_LOGISTICS,
+    KIND_PAYMENT, KIND_PURCHASE, KIND_SALARY, KIND_SALES_PO,
 };
 use crate::online::is_online;
 use crate::sheets::{
@@ -32,6 +32,7 @@ pub fn office_cells(books: &LocalBooks, kind: &str, key: &str) -> Result<(Vec<St
         KIND_PURCHASE => load_purchase(books, key),
         KIND_PAYMENT => load_payment(books, key),
         KIND_SALARY => load_salary(books, key),
+        KIND_SALES_PO => load_sales_po(books, key),
         KIND_INVENTORY => load_inventory(books, key),
         KIND_LOGISTICS => load_logistics(books, key),
         KIND_DOCUMENT => load_document(books, key),
@@ -103,6 +104,34 @@ fn load_salary(books: &LocalBooks, key: &str) -> Result<(Vec<String>, String, i6
                 let cells = vec![
                     row.get::<_, Option<String>>(0)?.unwrap_or_default(),
                     row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                    row.get::<_, Option<String>>(2)?.unwrap_or_default(),
+                    row.get::<_, Option<String>>(3)?.unwrap_or_default(),
+                    row.get::<_, Option<f64>>(4)?.unwrap_or(0.0).to_string(),
+                ];
+                Ok((cells, row.get(5)?, row.get(6)?))
+            },
+        )
+        .map_err(|_| BooksError::from(format!("{key} is not on this PC.")))
+}
+
+fn load_sales_po(books: &LocalBooks, key: &str) -> Result<(Vec<String>, String, i64)> {
+    let (po_number, project) = key.split_once('@').ok_or_else(|| {
+        BooksError::from("Sales PO hive key must look like PO-1@CUST_01.")
+    })?;
+    books
+        .conn()
+        .query_row(
+            "SELECT po_number, project, client, gst, total_value,
+                    COALESCE(source_hash,''), COALESCE(hive_rev,0)
+             FROM sales_po WHERE po_number = ?1 COLLATE NOCASE AND project = ?2 COLLATE NOCASE LIMIT 1",
+            rusqlite::params![po_number.trim(), project.trim()],
+            |row| {
+                let po: String = row.get(0)?;
+                let proj: String = row.get(1)?;
+                let cells = vec![
+                    sales_po_hive_key(&po, &proj),
+                    po,
+                    proj,
                     row.get::<_, Option<String>>(2)?.unwrap_or_default(),
                     row.get::<_, Option<String>>(3)?.unwrap_or_default(),
                     row.get::<_, Option<f64>>(4)?.unwrap_or(0.0).to_string(),
@@ -209,6 +238,14 @@ fn mark_office_submitted(books: &LocalBooks, kind: &str, key: &str, fp: &str, re
              WHERE salary_number = ?3 COLLATE NOCASE",
             rusqlite::params![fp, rev, key],
         )?,
+        KIND_SALES_PO => {
+            let (po_number, project) = key.split_once('@').unwrap_or(("", ""));
+            books.conn().execute(
+                "UPDATE sales_po SET is_dirty = 0, source_hash = ?1, hive_rev = ?2, updated_at = datetime('now')
+                 WHERE po_number = ?3 COLLATE NOCASE AND project = ?4 COLLATE NOCASE",
+                rusqlite::params![fp, rev, po_number.trim(), project.trim()],
+            )?
+        }
         KIND_INVENTORY => {
             let id: i64 = key.strip_prefix("INV-").and_then(|s| s.parse().ok()).unwrap_or(0);
             books.conn().execute(
@@ -291,6 +328,33 @@ impl GoogleOfficeHive {
             account: load_service_account()?,
             fail_if_missing: true,
         })
+    }
+
+    fn probe(&self, kind: &str) -> HiveTabStatus {
+        let tab = tab_name(kind).to_string();
+        match fetch_sheet_values(&self.account, &tab) {
+            Ok(values) => HiveTabStatus {
+                kind: kind.to_string(),
+                tab,
+                present: true,
+                row_count: parse_tab_rows(&values, kind).len() as i64,
+                error: None,
+            },
+            Err(err) if is_missing_tab_error(&err.to_string()) => HiveTabStatus {
+                kind: kind.to_string(),
+                tab,
+                present: false,
+                row_count: 0,
+                error: None,
+            },
+            Err(err) => HiveTabStatus {
+                kind: kind.to_string(),
+                tab,
+                present: false,
+                row_count: 0,
+                error: Some(err.to_string()),
+            },
+        }
     }
 }
 
@@ -453,6 +517,104 @@ pub fn submit_office(
     submit_office_with(books, &mut hive, kind, key, allow_bootstrap)
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HiveTabStatus {
+    pub kind: String,
+    pub tab: String,
+    pub present: bool,
+    pub row_count: i64,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HiveStatus {
+    pub online: bool,
+    pub credentials_found: bool,
+    pub tabs: Vec<HiveTabStatus>,
+}
+
+pub fn hive_status() -> HiveStatus {
+    let online = is_online();
+    let credentials_found = credentials_exist();
+    if !online {
+        return HiveStatus {
+            online,
+            credentials_found,
+            tabs: HIVE_KINDS
+                .iter()
+                .map(|kind| HiveTabStatus {
+                    kind: (*kind).to_string(),
+                    tab: tab_name(kind).to_string(),
+                    present: false,
+                    row_count: 0,
+                    error: Some("This PC is offline. Cannot inspect hive tabs.".into()),
+                })
+                .collect(),
+        };
+    }
+    if !credentials_found {
+        return HiveStatus {
+            online,
+            credentials_found,
+            tabs: HIVE_KINDS
+                .iter()
+                .map(|kind| HiveTabStatus {
+                    kind: (*kind).to_string(),
+                    tab: tab_name(kind).to_string(),
+                    present: false,
+                    row_count: 0,
+                    error: Some(
+                        "Google credentials not found at %LOCALAPPDATA%/T-Books/credentials.json."
+                            .into(),
+                    ),
+                })
+                .collect(),
+        };
+    }
+    let hive = match GoogleOfficeHive::connect() {
+        Ok(h) => h,
+        Err(err) => {
+            return HiveStatus {
+                online,
+                credentials_found,
+                tabs: HIVE_KINDS
+                    .iter()
+                    .map(|kind| HiveTabStatus {
+                        kind: (*kind).to_string(),
+                        tab: tab_name(kind).to_string(),
+                        present: false,
+                        row_count: 0,
+                        error: Some(err.to_string()),
+                    })
+                    .collect(),
+            };
+        }
+    };
+    let tabs = HIVE_KINDS.iter().map(|kind| hive.probe(kind)).collect();
+    HiveStatus {
+        online,
+        credentials_found,
+        tabs,
+    }
+}
+
+pub fn bootstrap_hive_tab(kind: &str) -> Result<String> {
+    if !HIVE_KINDS.contains(&kind) {
+        return Err(BooksError::from("Unknown hive kind."));
+    }
+    let mut hive = GoogleOfficeHive::connect()?;
+    hive.fail_if_missing = false;
+    match hive.ensure_tab(kind, &tab_headers(kind))? {
+        EnsureTab::Exists => Ok(format!("{} tab is already on the sheet.", tab_name(kind))),
+        EnsureTab::BootstrappedHeaders => Ok(format!(
+            "{} tab was created with headers only.",
+            tab_name(kind)
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -540,5 +702,35 @@ mod tests {
             }
             other => panic!("{other:?}"),
         }
+    }
+
+    #[test]
+    fn sales_po_submits_on_po_at_project_key() {
+        let mut books = open_memory().unwrap();
+        crate::office::save_sales_po(
+            &mut books,
+            crate::office::SalesPoSave {
+                id: None,
+                project: "CUST_01".into(),
+                po_number: "PO-1".into(),
+                client: "CUST_01".into(),
+                gst: String::new(),
+                items: vec![],
+            },
+        )
+        .unwrap();
+        let mut hive = MemoryHive::default();
+        hive.ensure_tab(KIND_SALES_PO, &tab_headers(KIND_SALES_PO)).unwrap();
+        let out = submit_office_with(&books, &mut hive, KIND_SALES_PO, "PO-1@CUST_01", true).unwrap();
+        assert!(matches!(out, CasOutcome::Ok { .. }));
+        let dirty: i64 = books
+            .conn()
+            .query_row(
+                "SELECT is_dirty FROM sales_po WHERE po_number = 'PO-1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(dirty, 0);
     }
 }

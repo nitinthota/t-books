@@ -10,6 +10,7 @@ pub const KIND_VOUCHER: &str = "voucher";
 pub const KIND_PURCHASE: &str = "purchase";
 pub const KIND_PAYMENT: &str = "payment";
 pub const KIND_SALARY: &str = "salary";
+pub const KIND_SALES_PO: &str = "sales_po";
 #[allow(dead_code)]
 pub const KIND_INVENTORY: &str = "inventory";
 #[allow(dead_code)]
@@ -31,9 +32,26 @@ pub const VOUCHER_HEADERS: &[&str] = &[
     "project_name",
 ];
 
+/// Windows hive kinds. Same set as Loopbook modules that leave this PC on Submit.
+pub const HIVE_KINDS: &[&str] = &[
+    KIND_ACCESS,
+    KIND_VOUCHER,
+    KIND_PURCHASE,
+    KIND_PAYMENT,
+    KIND_SALARY,
+    KIND_SALES_PO,
+    KIND_INVENTORY,
+    KIND_LOGISTICS,
+    KIND_DOCUMENT,
+];
+
 /// `{KEY} was just updated by another user. Reload and submit again.`
 pub fn hive_conflict_message(key: &str) -> String {
     format!("{key} was just updated by another user. Reload and submit again.")
+}
+
+pub fn sales_po_hive_key(po_number: &str, project: &str) -> String {
+    format!("{}@{}", po_number.trim(), project.trim())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -360,6 +378,13 @@ pub fn list_dirty_keys(books: &LocalBooks) -> Result<Vec<DirtyKey>> {
         books,
         &mut out,
         &mut seen,
+        KIND_SALES_PO,
+        "SELECT TRIM(po_number) || '@' || TRIM(project) FROM sales_po WHERE COALESCE(is_dirty,0) = 1 AND TRIM(po_number) != ''",
+    )?;
+    push_dirty_sql(
+        books,
+        &mut out,
+        &mut seen,
         KIND_INVENTORY,
         "SELECT 'INV-' || id FROM inventory WHERE COALESCE(is_dirty,0) = 1",
     )?;
@@ -412,6 +437,7 @@ pub fn tab_name(kind: &str) -> &'static str {
         KIND_PURCHASE => "Purchase",
         KIND_PAYMENT => "Payments",
         KIND_SALARY => "Payroll",
+        KIND_SALES_PO => "Sales_PO",
         KIND_INVENTORY => "Inventory",
         KIND_LOGISTICS => "Logistics",
         KIND_DOCUMENT => "Documents",
@@ -452,6 +478,16 @@ pub fn tab_headers(kind: &str) -> Vec<String> {
             "month".into(),
             "kind".into(),
             "net".into(),
+            "fp".into(),
+            "rev".into(),
+        ],
+        KIND_SALES_PO => vec![
+            "key".into(),
+            "po_number".into(),
+            "project".into(),
+            "client".into(),
+            "gst".into(),
+            "total_value".into(),
             "fp".into(),
             "rev".into(),
         ],
@@ -692,5 +728,13 @@ mod tests {
             hive_conflict_message("Voucher 20"),
             "Voucher 20 was just updated by another user. Reload and submit again."
         );
+    }
+
+    #[test]
+    fn windows_hive_kinds_cover_every_office_module() {
+        assert_eq!(HIVE_KINDS.len(), 9);
+        assert!(HIVE_KINDS.contains(&KIND_SALES_PO));
+        assert_eq!(tab_name(KIND_SALES_PO), "Sales_PO");
+        assert_eq!(sales_po_hive_key("PO-1", "CUST_01"), "PO-1@CUST_01");
     }
 }

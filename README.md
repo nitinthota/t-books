@@ -77,4 +77,4 @@ Business rules live under `src-tauri/src/core/` (Rust) and `src/lib/t-books/busi
 
 Owner sign-in on a new PC: `thotanitin123@gmail.com` sets the first local password.
 
-See [docs/QUICK-START.md](docs/QUICK-START.md), [docs/architecture.md](docs/architecture.md), and [docs/RELEASE.md](docs/RELEASE.md).
+See [docs/QUICK-START.md](docs/QUICK-START.md), [docs/architecture.md](docs/architecture.md), [docs/RELEASE.md](docs/RELEASE.md). Loopbook is rules-only — do not merge that repo: [docs/AI_DO_NOT_MERGE.md](docs/AI_DO_NOT_MERGE.md).

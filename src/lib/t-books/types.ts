@@ -370,14 +370,17 @@ export type VendorRef = {
 export type NavId =
   | "board"
   | "vouchers"
+  | "finance"
+  | "purchase"
+  | "sales"
   | "vendors"
   | "projects"
-  | "sales"
-  | "purchase"
-  | "hr"
-  | "trial"
   | "inventory"
   | "logistics"
+  | "hr"
   | "documents"
-  | "settings"
-  | "access";
+  | "duplicates"
+  | "explorer"
+  | "rules"
+  | "access"
+  | "system";

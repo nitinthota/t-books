@@ -47,6 +47,8 @@ pub struct SalesPo {
     pub created_at: String,
     pub updated_at: String,
     #[serde(default)]
+    pub is_dirty: bool,
+    #[serde(default)]
     pub items: Vec<PoItemIn>,
 }
 
@@ -406,13 +408,15 @@ fn map_sales(row: &rusqlite::Row<'_>) -> rusqlite::Result<SalesPo> {
         total_value: row.get::<_, Option<f64>>(5)?.unwrap_or(0.0),
         created_at: row.get::<_, Option<String>>(6)?.unwrap_or_default(),
         updated_at: row.get::<_, Option<String>>(7)?.unwrap_or_default(),
+        is_dirty: row.get::<_, i64>(8).unwrap_or(0) != 0,
         items: Vec::new(),
     })
 }
 
 pub fn list_sales_po(books: &LocalBooks) -> Result<Vec<SalesPo>> {
     let mut stmt = books.conn().prepare(
-        "SELECT id, project, po_number, client, gst, total_value, created_at, updated_at
+        "SELECT id, project, po_number, client, gst, total_value, created_at, updated_at,
+                COALESCE(is_dirty,0)
          FROM sales_po ORDER BY updated_at DESC, id DESC",
     )?;
     let rows = stmt.query_map([], map_sales)?;
@@ -427,7 +431,8 @@ pub fn get_sales_po(books: &LocalBooks, id: i64) -> Result<SalesPo> {
     let mut po = books
         .conn()
         .query_row(
-            "SELECT id, project, po_number, client, gst, total_value, created_at, updated_at
+            "SELECT id, project, po_number, client, gst, total_value, created_at, updated_at,
+                    COALESCE(is_dirty,0)
              FROM sales_po WHERE id = ?1",
             params![id],
             map_sales,
@@ -461,7 +466,7 @@ pub fn save_sales_po(books: &mut LocalBooks, payload: SalesPoSave) -> Result<Sal
     let id = if let Some(existing) = payload.id {
         let changed = tx.execute(
             "UPDATE sales_po SET project = ?1, po_number = ?2, client = ?3, gst = ?4,
-             total_value = ?5, updated_at = datetime('now') WHERE id = ?6",
+             total_value = ?5, is_dirty = 1, updated_at = datetime('now') WHERE id = ?6",
             params![project, po_number, client, gst, total, existing],
         )?;
         if changed == 0 {
@@ -470,8 +475,8 @@ pub fn save_sales_po(books: &mut LocalBooks, payload: SalesPoSave) -> Result<Sal
         existing
     } else {
         tx.execute(
-            "INSERT INTO sales_po (project, po_number, client, gst, total_value, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, datetime('now'), datetime('now'))",
+            "INSERT INTO sales_po (project, po_number, client, gst, total_value, is_dirty, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, 1, datetime('now'), datetime('now'))",
             params![project, po_number, client, gst, total],
         )?;
         tx.last_insert_rowid()

@@ -5,7 +5,22 @@ export const KIND_PURCHASE = "purchase";
 export const KIND_PAYMENT = "payment";
 export const KIND_SALARY = "salary";
 export const KIND_SALES_PO = "sales_po";
+export const KIND_INVENTORY = "inventory";
+export const KIND_LOGISTICS = "logistics";
+export const KIND_DOCUMENT = "document";
 export const KIND_ACCESS = "access";
+
+export const HIVE_KINDS = [
+  KIND_ACCESS,
+  KIND_VOUCHER,
+  KIND_PURCHASE,
+  KIND_PAYMENT,
+  KIND_SALARY,
+  KIND_SALES_PO,
+  KIND_INVENTORY,
+  KIND_LOGISTICS,
+  KIND_DOCUMENT,
+] as const;
 
 export type DirtyKey = { kind: string; key: string };
 
@@ -27,6 +42,31 @@ export function hiveConflictMessage(key: string): string {
 
 export function salesPoHiveKey(poNumber: string, project: string): string {
   return `${poNumber.trim()}@${project.trim()}`;
+}
+
+export function tabName(kind: string): string {
+  switch (kind) {
+    case KIND_ACCESS:
+      return "Access";
+    case KIND_VOUCHER:
+      return "Voucher_Raw_Data";
+    case KIND_PURCHASE:
+      return "Purchase";
+    case KIND_PAYMENT:
+      return "Payments";
+    case KIND_SALARY:
+      return "Payroll";
+    case KIND_SALES_PO:
+      return "Sales_PO";
+    case KIND_INVENTORY:
+      return "Inventory";
+    case KIND_LOGISTICS:
+      return "Logistics";
+    case KIND_DOCUMENT:
+      return "Documents";
+    default:
+      return "Hive";
+  }
 }
 
 type Tab = { headers: string[]; rows: HiveRow[] };

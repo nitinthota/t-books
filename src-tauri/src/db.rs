@@ -74,6 +74,61 @@ fn column_names(conn: &Connection, table: &str) -> Result<Vec<String>> {
     Ok(names)
 }
 
+fn seed_default_rules(conn: &Connection) -> Result<()> {
+    const RULES: &[(&str, &str, &str, &str, i64)] = &[
+        (
+            "ledger-purchase",
+            "Post vendor bills to ledger",
+            "purchase",
+            "ledger",
+            1,
+        ),
+        (
+            "ledger-payment",
+            "Post vendor payments to bank",
+            "payment",
+            "bank",
+            2,
+        ),
+        (
+            "project-cost",
+            "Add bill value to project cost",
+            "purchase",
+            "project_cost",
+            3,
+        ),
+        (
+            "stock-inventory",
+            "Move stock when inventory posts",
+            "inventory",
+            "stock",
+            4,
+        ),
+        (
+            "ledger-salary",
+            "Post salary to payroll ledger",
+            "salary",
+            "ledger",
+            5,
+        ),
+        (
+            "ledger-sale",
+            "Post sales PO received to ledger",
+            "sale",
+            "ledger",
+            6,
+        ),
+    ];
+    for (id, name, when_type, then_action, sort) in RULES {
+        conn.execute(
+            "INSERT OR IGNORE INTO rules (id, name, when_type, then_action, enabled, sort_order)
+             VALUES (?1, ?2, ?3, ?4, 1, ?5)",
+            rusqlite::params![id, name, when_type, then_action, sort],
+        )?;
+    }
+    Ok(())
+}
+
 fn ensure_column(conn: &Connection, table: &str, name: &str, decl: &str) -> Result<()> {
     let cols = column_names(conn, table)?;
     if cols.iter().any(|c| c == name) {
@@ -321,8 +376,18 @@ fn migrate(conn: &Connection) -> Result<()> {
         CREATE UNIQUE INDEX IF NOT EXISTS idx_purchase_payments_number
           ON purchase_payments(pay_number COLLATE NOCASE);
         CREATE INDEX IF NOT EXISTS idx_purchase_payments_po ON purchase_payments(po_number);
+
+        CREATE TABLE IF NOT EXISTS rules (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          when_type TEXT NOT NULL,
+          then_action TEXT NOT NULL,
+          enabled INTEGER NOT NULL DEFAULT 1,
+          sort_order INTEGER NOT NULL DEFAULT 0
+        );
         "#,
     )?;
+    seed_default_rules(conn)?;
     ensure_column(conn, "vouchers", "is_dirty", "INTEGER NOT NULL DEFAULT 0")?;
     ensure_column(conn, "vouchers", "total_value", "REAL")?;
     ensure_column(conn, "vouchers", "total_paid", "REAL")?;
@@ -345,6 +410,9 @@ fn migrate(conn: &Connection) -> Result<()> {
     ensure_column(conn, "purchase_po", "is_dirty", "INTEGER NOT NULL DEFAULT 0")?;
     ensure_column(conn, "purchase_po", "hive_rev", "INTEGER NOT NULL DEFAULT 0")?;
     ensure_column(conn, "purchase_po", "source_hash", "TEXT")?;
+    ensure_column(conn, "sales_po", "is_dirty", "INTEGER NOT NULL DEFAULT 0")?;
+    ensure_column(conn, "sales_po", "hive_rev", "INTEGER NOT NULL DEFAULT 0")?;
+    ensure_column(conn, "sales_po", "source_hash", "TEXT")?;
     ensure_column(conn, "hr_people", "active", "TEXT NOT NULL DEFAULT 'Yes'")?;
     ensure_column(conn, "hr_payroll", "salary_number", "TEXT")?;
     ensure_column(conn, "hr_payroll", "pay_kind", "TEXT NOT NULL DEFAULT 'salary'")?;
@@ -401,13 +469,13 @@ mod tests {
                     'vendors', 'projects', 'vouchers', 'voucher_payments',
                     'sales_po', 'sales_po_items', 'purchase_po', 'purchase_po_items',
                     'hr_people', 'hr_payroll', 'inventory', 'logistics', 'documents',
-                    'pending_submit', 'purchase_payments'
+                    'pending_submit', 'purchase_payments', 'rules'
                 )",
                 [],
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(count, 18);
+        assert_eq!(count, 19);
         let users: i64 = books
             .conn()
             .query_row("SELECT COUNT(*) FROM users_local", [], |row| row.get(0))
@@ -431,7 +499,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, "8");
+        assert_eq!(version, "9");
         let logic: String = books
             .conn()
             .query_row(
