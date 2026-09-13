@@ -5,6 +5,7 @@ description = "T Books — office register on this PC"
 authors = ["T Books"]
 edition = "2021"
 rust-version = "1.77"
+default-run = "t-books"
 
 [lib]
 name = "t_books_lib"

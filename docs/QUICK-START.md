@@ -1,6 +1,6 @@
 # T Books — quick start
 
-1. **Install** `T-Books-Setup.exe` (per-user). Open T Books from the Start menu.
+1. **Install** `T-Books-Setup.exe` on Windows 10/11 (per-user; no admin). Open **T Books** from the Start menu. Build that file with `npm run tauri:build` on a Windows PC (see docs/RELEASE.md). This Linux sandbox cannot produce the `.exe`.
 2. **Login** as `thotanitin123@gmail.com` and set the password for this PC.
 3. Place `credentials.json` (service account) in `%LOCALAPPDATA%\T-Books` if you need Access/Refresh/Submit. Never put that JSON in git. `Voucher_Raw_Data` is read-only; live rows go to the Loopbooks hive workbooks (see docs/SHEET_HIVE_PLAN.md).
 4. **Refresh** when online to pull vouchers. Sales, HR, inventory, logistics stay local and are never deleted by Refresh.
