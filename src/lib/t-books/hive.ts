@@ -69,6 +69,31 @@ export function tabName(kind: string): string {
   }
 }
 
+export function liveTabName(kind: string): string {
+  switch (kind) {
+    case KIND_VOUCHER:
+      return "Voucher register";
+    case KIND_PURCHASE:
+      return "Purchase";
+    case KIND_PAYMENT:
+      return "Purchase payments";
+    case KIND_SALARY:
+      return "Payroll";
+    case KIND_SALES_PO:
+      return "Sales_PO";
+    case KIND_INVENTORY:
+      return "Inventory";
+    case KIND_LOGISTICS:
+      return "Logistics";
+    case KIND_DOCUMENT:
+      return "Documents";
+    case KIND_ACCESS:
+      return "Access";
+    default:
+      return tabName(kind);
+  }
+}
+
 type Tab = { headers: string[]; rows: HiveRow[] };
 
 export class MemoryHive {

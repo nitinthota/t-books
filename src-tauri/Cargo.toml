@@ -19,8 +19,9 @@ name = "t-books-stress"
 path = "src/bin/t-books-stress.rs"
 
 [[bin]]
-name = "t-books-endurance"
-path = "src/bin/t-books-endurance.rs"
+name = "t-books-hive"
+path = "src/bin/t-books-hive.rs"
+
 
 [dependencies]
 rusqlite = { version = "0.32", features = ["bundled"] }

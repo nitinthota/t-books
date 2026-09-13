@@ -48,7 +48,7 @@ npm run tauri:build
 
 Uninstall removes the app only. It does **not** delete `%LOCALAPPDATA%\T-Books`.
 
-Place `credentials.json` (Google service account) in `%LOCALAPPDATA%\T-Books` on each PC that needs Access / Refresh / Submit. That file is never stored in this repository.
+Place `credentials.json` (Google service account) in `%LOCALAPPDATA%\T-Books` on each PC that needs Access / Refresh / Submit. That file is never stored in this repository. See [docs/SHEET_HIVE_PLAN.md](docs/SHEET_HIVE_PLAN.md) and `secrets/google-service-account.example.json`. `Voucher_Raw_Data` is read-only; structured hive workbooks hold live rows.
 
 ## Folders
 

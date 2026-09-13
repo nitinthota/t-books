@@ -20,6 +20,7 @@ export type AccessRow = {
   email: string;
   role: string;
   active: string;
+  accountType?: string;
   lastSynced: string;
 };
 

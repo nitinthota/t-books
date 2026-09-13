@@ -7,16 +7,17 @@ use crate::db::LocalBooks;
 use crate::hive::{
     bump_pending_attempt, clear_pending, enqueue_submit, pending_payload_json, KIND_VOUCHER,
 };
+use crate::hive_plan::target_for_kind;
 use crate::online::is_online;
 use crate::sheets::{
-    append_sheet_row, credentials_exist, fetch_sheet_a1, load_service_account, update_sheet_row,
+    append_row_on, credentials_exist, fetch_a1_on, load_service_account, update_row_on,
     ServiceAccount,
 };
 use crate::vouchers::{
     apply_one_force, fingerprint_parsed, load_local_voucher, mark_submitted, parse_one_voucher_row,
     voucher_to_sheet_row, ParsedVoucher,
 };
-use crate::{BooksError, Result, VOUCHER_RAW_TAB};
+use crate::{BooksError, Result};
 
 pub const SHEET_LAST_COL: &str = "BL";
 
@@ -121,7 +122,8 @@ impl GoogleSheet {
 
 impl VoucherSheet for GoogleSheet {
     fn lookup(&mut self, voucher_number: i64) -> Result<Vec<RemoteMatch>> {
-        let column_a = fetch_sheet_a1(&self.account, VOUCHER_RAW_TAB, "A:A")?;
+        let target = target_for_kind(KIND_VOUCHER)?;
+        let column_a = fetch_a1_on(&self.account, &target.spreadsheet_id, &target.tab, "A:A")?;
         let mut hits = Vec::new();
         for (i, row) in column_a.iter().enumerate() {
             let sheet_row = (i as u32) + 1;
@@ -133,7 +135,7 @@ impl VoucherSheet for GoogleSheet {
         let mut out = Vec::with_capacity(hits.len());
         for sheet_row in hits {
             let a1 = format!("A{sheet_row}:{SHEET_LAST_COL}{sheet_row}");
-            let values = fetch_sheet_a1(&self.account, VOUCHER_RAW_TAB, &a1)?;
+            let values = fetch_a1_on(&self.account, &target.spreadsheet_id, &target.tab, &a1)?;
             let cells = values.into_iter().next().unwrap_or_default();
             out.push(RemoteMatch { sheet_row, cells });
         }
@@ -141,12 +143,20 @@ impl VoucherSheet for GoogleSheet {
     }
 
     fn update_row(&mut self, sheet_row: u32, cells: &[String]) -> Result<()> {
+        let target = target_for_kind(KIND_VOUCHER)?;
         let a1 = format!("A{sheet_row}:{SHEET_LAST_COL}{sheet_row}");
-        update_sheet_row(&self.account, VOUCHER_RAW_TAB, &a1, cells)
+        update_row_on(
+            &self.account,
+            &target.spreadsheet_id,
+            &target.tab,
+            &a1,
+            cells,
+        )
     }
 
     fn append_row(&mut self, cells: &[String]) -> Result<()> {
-        append_sheet_row(&self.account, VOUCHER_RAW_TAB, cells)
+        let target = target_for_kind(KIND_VOUCHER)?;
+        append_row_on(&self.account, &target.spreadsheet_id, &target.tab, cells)
     }
 }
 

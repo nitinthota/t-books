@@ -19,7 +19,7 @@ pub const KIND_LOGISTICS: &str = "logistics";
 pub const KIND_DOCUMENT: &str = "document";
 pub const KIND_ACCESS: &str = "access";
 
-pub const ACCESS_HEADERS: &[&str] = &["Name", "Email", "Role", "Active"];
+pub const ACCESS_HEADERS: &[&str] = &["Name", "Email", "Role", "Active", "Account_Type"];
 pub const VOUCHER_HEADERS: &[&str] = &[
     "serial_no",
     "voucher_date",

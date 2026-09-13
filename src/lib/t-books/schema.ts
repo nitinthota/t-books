@@ -171,7 +171,8 @@ CREATE TABLE IF NOT EXISTS access_cache (
   name TEXT,
   role TEXT,
   active TEXT,
-  last_synced TEXT
+  last_synced TEXT,
+  account_type TEXT
 );
 
 CREATE TABLE IF NOT EXISTS vendors (
@@ -312,5 +313,5 @@ export const OFFICE_COLUMN_MIGRATIONS: Array<{ table: string; name: string; decl
   { table: "logistics", name: "source_hash", decl: "TEXT" },
   { table: "documents", name: "is_dirty", decl: "INTEGER NOT NULL DEFAULT 0" },
   { table: "documents", name: "hive_rev", decl: "INTEGER NOT NULL DEFAULT 0" },
-  { table: "documents", name: "source_hash", decl: "TEXT" },
+  { table: "access_cache", name: "account_type", decl: "TEXT" },
 ];

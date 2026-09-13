@@ -20,6 +20,9 @@ dist/
 !.env.example
 credentials.json
 **/credentials.json
+secrets/google-service-account.json
+!secrets/google-service-account.example.json
+!secrets/README.md
 *.pem
 *.p12
 *.key

@@ -19,6 +19,7 @@ fn access(name: &str, email: &str, role: &str, active: &str) -> AccessRow {
         role: role.into(),
         active: active.into(),
         last_synced: String::new(),
+        account_type: role.to_string(),
     }
 }
 

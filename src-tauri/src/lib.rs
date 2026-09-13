@@ -4,12 +4,15 @@ mod control;
 pub mod core;
 mod db;
 mod hive;
+mod hive_plan;
 mod log;
+mod migrate;
 mod office;
 mod office_sync;
 mod online;
 mod ops;
 mod passwords;
+mod provision;
 mod sheets;
 mod submit;
 pub mod testdata;
@@ -50,7 +53,11 @@ pub use office::{
     PurchasePayment, PurchasePaymentSave, PurchasePo, PurchasePoSave, SalesPo, SalesPoSave,
     SearchHit, VendorRef,
 };
-pub use office_sync::{bootstrap_hive_tab, hive_status, submit_office, submit_office_with, HiveStatus, HiveTabStatus};
+pub use office_sync::{
+    bootstrap_hive_tab, hive_status, submit_office, submit_office_with, HiveStatus, HiveTabStatus,
+};
+pub use provision::{migrate_from_raw, provision_hive, ProvisionReport};
+pub use hive_plan::{load_map as load_hive_map, validate_plan, HiveTarget};
 pub use trial::{available_fy, build_trial, TrialBalance, TrialLine};
 pub use passwords::{hash_password, validate_new_password, verify_password};
 pub use submit::{
@@ -77,7 +84,7 @@ pub const OFFLINE_BANNER: &str =
     "Offline — working on this PC. Access list and Refresh paused.";
 pub const CREDENTIALS_BANNER: &str = "Google credentials not found. Running offline.";
 pub const MIN_PASSWORD_LENGTH: usize = 8;
-pub const SCHEMA_VERSION: &str = "9";
+pub const SCHEMA_VERSION: &str = "10";
 pub const LOOPBOOK_LOGIC_VERSION: &str = business_rules::LOOPBOOK_LOGIC_VERSION;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
@@ -919,6 +926,23 @@ mod desktop {
     }
 
     #[tauri::command]
+    fn provision_hive(
+        state: tauri::State<AppState>,
+    ) -> std::result::Result<crate::provision::ProvisionReport, String> {
+        require_owner(&state)?;
+        crate::provision_hive(true).map_err(map_err)
+    }
+
+    #[tauri::command]
+    fn migrate_from_raw(
+        state: tauri::State<AppState>,
+        dry_run: bool,
+    ) -> std::result::Result<crate::migrate::MigrationPlan, String> {
+        require_owner(&state)?;
+        crate::migrate_from_raw(dry_run).map_err(map_err)
+    }
+
+    #[tauri::command]
     fn retry_pending_submit(
         state: tauri::State<AppState>,
         kind: String,
@@ -1020,6 +1044,8 @@ mod desktop {
                 toggle_rule,
                 hive_status,
                 bootstrap_hive_tab,
+                provision_hive,
+                migrate_from_raw,
                 retry_pending_submit,
                 list_hr_people,
                 save_hr_person,

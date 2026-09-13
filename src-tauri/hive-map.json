@@ -1,0 +1,251 @@
+{
+  "version": 1,
+  "validatedAgainst": "Sheet hive plan structure agent bc-2a7edae8-704c-4c15-b8d8-edd6451f48f4",
+  "rawSource": {
+    "name": "VOUCHER_RAW_Data archive",
+    "spreadsheetId": "1J9ZuNL1uZ7DmqOGIZojuOCMeYp9VnC-SEow6YG86cgE",
+    "tab": "Voucher_Raw_Data",
+    "gid": 0,
+    "write": false
+  },
+  "rootFolder": {
+    "name": "Loopbooks hive",
+    "id": "1Hetx7LPOouxTDrI3Oq1maamy8m-1AdMf"
+  },
+  "folders": [
+    { "key": "books", "name": "Books", "id": "1kreQcVMoI0ULA4a2IJmtkuThTujHCCoh", "parentKey": "root" },
+    { "key": "work", "name": "Work", "id": "1qXfjWFd-yfpmIR0PXk_4yCgJNHvJPKgI", "parentKey": "root" },
+    { "key": "documents", "name": "Documents", "id": "1HVCwWny2p_8Ort6nVd1eGhE0js5Tx3ZR", "parentKey": "root" },
+    { "key": "control", "name": "Control", "id": "16kFy8L8uwpFAbPMCcxyt_qrbWETrwvgX", "parentKey": "root" },
+    { "key": "archive", "name": "Archive", "id": "1sb_XPd-RZ3vBXoBCXRIJrCotV6GAy8yu", "parentKey": "root" },
+    { "key": "doc_hr", "name": "HR", "id": "1bzHJDIZLQ_DiSbNh71edRPoWXbRVQOPM", "parentKey": "documents" },
+    { "key": "doc_inventory", "name": "Inventory", "id": "1svpkBAjaDfLIcI7Spf7gScP2kibdD9U7", "parentKey": "documents" },
+    { "key": "doc_logistics", "name": "Logistics", "id": "1QxzcWekBlGMEWigyjpXT7clbErFNjQ2E", "parentKey": "documents" },
+    { "key": "doc_projects", "name": "Projects", "id": "1VnvECMTY93n6dvynyuSB9YTg1Bjajjj1", "parentKey": "documents" },
+    { "key": "doc_purchase", "name": "Purchase bills", "id": "1dXZDTC4r0P1NIo-p6-wBM_JdWUAF1i4A", "parentKey": "documents" },
+    { "key": "doc_sales", "name": "Sales", "id": "11NOS55wkidZlXOr8ObpO3npP63oDxG8I", "parentKey": "documents" },
+    { "key": "doc_vendors", "name": "Vendors", "id": "1KAkoPLrp9JNl-nJX3PshVdBjRhFb0EcS", "parentKey": "documents" },
+    { "key": "doc_vouchers", "name": "Vouchers", "id": "1OnSUwNlMbxJF70_56C0CiSQCYL67KEPg", "parentKey": "documents" }
+  ],
+  "workbooks": [
+    {
+      "key": "voucher_register",
+      "title": "Loopbooks — Voucher register",
+      "id": "1E6x0sHC6Ft9ZivTDH1ujP4aZ5jClu7-0-ropXZHAK7s",
+      "folderKey": "books",
+      "kind": "voucher",
+      "tab": "Voucher register",
+      "write": true
+    },
+    {
+      "key": "payments",
+      "title": "Loopbooks — Payments",
+      "id": "1dtS1d9h6mb0LkEVpJemW2-7I2hGMj6TWDfBApmARMNA",
+      "folderKey": "books",
+      "kind": "voucher_payment",
+      "tab": "Payments",
+      "write": true
+    },
+    {
+      "key": "outstanding",
+      "title": "Loopbooks — Outstanding",
+      "id": "1Pneczv8jlPi1QOztA453fxtt5yccRPCXPzyOxy6UYr4",
+      "folderKey": "books",
+      "kind": "outstanding",
+      "tab": "Outstanding",
+      "write": true
+    },
+    {
+      "key": "board",
+      "title": "Loopbooks — Board",
+      "id": "1H57_NlRh03rfD-MVRItHI36Fn60-YdrLNztUtYjqF70",
+      "folderKey": "books",
+      "kind": "board",
+      "tab": "Board",
+      "write": true
+    },
+    {
+      "key": "trial",
+      "title": "Loopbooks — Trial balance",
+      "id": "1ifjX7iiHHw3FrNLYhxaSWatkq9jaUKOKRaAkM9A7W0U",
+      "folderKey": "books",
+      "kind": "trial",
+      "tab": "Trial balance",
+      "write": true
+    },
+    {
+      "key": "result",
+      "title": "Loopbooks — Result",
+      "id": "1vtNfuereoCe_nehDO1hzbSg73H1QqtZif65sc5cO_l8",
+      "folderKey": "books",
+      "kind": "result",
+      "tab": "Result",
+      "write": true
+    },
+    {
+      "key": "vendors",
+      "title": "Loopbooks — Vendors",
+      "id": "1BIeT2hL7zMTfzJDg6XnakCiC7XyRa-LvJEFPpx9hlXI",
+      "folderKey": "work",
+      "kind": "vendor",
+      "tab": "Vendors",
+      "write": true
+    },
+    {
+      "key": "jobs",
+      "title": "Loopbooks — Jobs",
+      "id": "1IREezchRh1bJtVpbRLQuB8hlV-6UWnzr5dKQLr3RF_E",
+      "folderKey": "work",
+      "kind": "project",
+      "tab": "Jobs",
+      "write": true
+    },
+    {
+      "key": "purchase_orders",
+      "title": "Loopbooks — Purchase orders",
+      "id": "15l8y0e4NRVdI0vFt4DAxNUeTvWnwnZvzvnhoKBGpgEY",
+      "folderKey": "work",
+      "kind": "purchase_report",
+      "tab": "Purchase orders",
+      "write": true
+    },
+    {
+      "key": "purchase_lines",
+      "title": "Loopbooks — Purchase lines",
+      "id": "1fezNOJuKOta5oErFwiKXEH6-oSn45oiZvTwXsVIQ0dI",
+      "folderKey": "work",
+      "kind": "purchase_item",
+      "tab": "Purchase lines",
+      "write": true
+    },
+    {
+      "key": "sales_orders",
+      "title": "Loopbooks — Sales orders",
+      "id": "1_D3U_IBcwYtrZnvzwI49DgyX04d30xqMp5tdB5qvkpo",
+      "folderKey": "work",
+      "kind": "sales_report",
+      "tab": "Sales orders",
+      "write": true
+    },
+    {
+      "key": "sales_lines",
+      "title": "Loopbooks — Sales lines",
+      "id": "1hojCJN8LbCfq5ko-LeYoZ9R27moghnSQorJG90z-2S4",
+      "folderKey": "work",
+      "kind": "sales_item",
+      "tab": "Sales lines",
+      "write": true
+    },
+    {
+      "key": "hr_people",
+      "title": "Loopbooks — HR people",
+      "id": "1jzb6PF54MJfj5xtYX5gbjfNSqUgk7-8sv_3MWkdp5j8",
+      "folderKey": "work",
+      "kind": "people",
+      "tab": "HR people",
+      "write": true
+    },
+    {
+      "key": "payslips",
+      "title": "Loopbooks — Payslips",
+      "id": "13-SmZbD_-qNTNlhzk3ar6iz7fojRbPFiirmxGR1jQ-k",
+      "folderKey": "work",
+      "kind": "salary_report",
+      "tab": "Payslips",
+      "write": true
+    },
+    {
+      "key": "stock",
+      "title": "Loopbooks — Stock",
+      "id": "1LH8dFeW82HAiGo3WHhjGF_h05CE1G5y8pSqNKLsTgwg",
+      "folderKey": "work",
+      "kind": "inventory_report",
+      "tab": "Stock",
+      "write": true
+    },
+    {
+      "key": "trips",
+      "title": "Loopbooks — Trips",
+      "id": "1X6TLKPAYZvpk7Voqwd2lNP9Jsi73XtBSyJ5mg9NM2sk",
+      "folderKey": "work",
+      "kind": "logistics_report",
+      "tab": "Trips",
+      "write": true
+    },
+    {
+      "key": "access",
+      "title": "Loopbooks — Access",
+      "id": "1tiSc6bd2wASi3vrVUwP5PIF3i7ZZqejmPKWK0PefQPY",
+      "folderKey": "control",
+      "kind": "access",
+      "tab": "Access",
+      "write": true
+    },
+    {
+      "key": "rules",
+      "title": "Loopbooks — Rules",
+      "id": "1wydVYlz0gx3xdiEjJRH-wKDtYWNnoejJWcwLLXuLtBk",
+      "folderKey": "control",
+      "kind": "rules",
+      "tab": "Rules",
+      "write": true
+    }
+  ],
+  "extraTabs": [
+    {
+      "workbookKey": "access",
+      "tab": "Credentials",
+      "kind": "credentials",
+      "write": true,
+      "note": "Name, Email, Account_Type, Password_Set only. Never a password or hash."
+    },
+    {
+      "workbookKey": "access",
+      "tab": "Migration_Log",
+      "kind": "migration_log",
+      "write": true
+    },
+    {
+      "workbookKey": "purchase_orders",
+      "tab": "Purchase",
+      "kind": "purchase",
+      "write": true
+    },
+    {
+      "workbookKey": "purchase_orders",
+      "tab": "Purchase payments",
+      "kind": "payment",
+      "write": true
+    },
+    {
+      "workbookKey": "sales_orders",
+      "tab": "Sales_PO",
+      "kind": "sales_po",
+      "write": true
+    },
+    {
+      "workbookKey": "payslips",
+      "tab": "Payroll",
+      "kind": "salary",
+      "write": true
+    },
+    {
+      "workbookKey": "stock",
+      "tab": "Inventory",
+      "kind": "inventory",
+      "write": true
+    },
+    {
+      "workbookKey": "trips",
+      "tab": "Logistics",
+      "kind": "logistics",
+      "write": true
+    },
+    {
+      "workbookKey": "access",
+      "tab": "Documents",
+      "kind": "document",
+      "write": true
+    }
+  ]
+}

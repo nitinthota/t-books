@@ -68,7 +68,7 @@ Hive law: **views never call Google.** Save = SQLite + dirty. Submit = one hive 
 | `refresh_access` | Access | read whole tab | Yes — explicit |
 | `refresh_vouchers` | `Voucher_Raw_Data` | read whole tab | Yes — explicit; dirty guard is **vouchers only** |
 | `force_refresh_vouchers` | `Voucher_Raw_Data` | read, discard dirty vouchers | Yes — explicit discard |
-| `submit_voucher` | `Voucher_Raw_Data` | **one row** write (CAS on `source_hash`) | Yes — explicit; integer column-A only |
+| `submit_voucher` | Voucher register (never `Voucher_Raw_Data`) | **one row** write | Yes — archive is read-only |
 | `reload_voucher` | `Voucher_Raw_Data` | **one row** read, replace local | Yes — conflict recovery |
 
 Access **write** (owner add/disable one row): **no Tauri command.** Gap.

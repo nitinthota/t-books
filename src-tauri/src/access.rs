@@ -4,9 +4,11 @@ use rusqlite::params;
 
 use crate::db::LocalBooks;
 use crate::online::is_online;
+use crate::hive::KIND_ACCESS;
+use crate::hive_plan::target_for_kind;
 use crate::sheets::{
-    append_sheet_row, create_tab_with_headers, credentials_exist, fetch_access_values,
-    is_missing_tab_error, load_service_account, update_sheet_row,
+    append_row_on, create_tab_with_headers_on, credentials_exist, fetch_access_values,
+    is_missing_tab_error, load_service_account, update_row_on,
 };
 use crate::{is_hardcoded_owner, normalize_email, BooksError, Result, ACCESS_TAB};
 
@@ -17,6 +19,8 @@ pub struct AccessRow {
     pub email: String,
     pub role: String,
     pub active: String,
+    #[serde(default)]
+    pub account_type: String,
     pub last_synced: String,
 }
 
@@ -89,6 +93,7 @@ pub fn parse_access_values(values: &[Vec<String>]) -> Result<Vec<AccessRow>> {
     let name_i = find_col(header, &["name"]);
     let role_i = find_col(header, &["role"]);
     let active_i = find_col(header, &["active"]);
+    let account_type_i = find_col(header, &["account_type", "account type"]);
     if active_i.is_none() {
         return Err(BooksError::from(format!(
             "{ACCESS_TAB} tab is missing the Active column."
@@ -104,6 +109,10 @@ pub fn parse_access_values(values: &[Vec<String>]) -> Result<Vec<AccessRow>> {
         let name = cell(row, name_i).trim().to_string();
         let role = normalize_role(cell(row, role_i));
         let active = normalize_active(cell(row, active_i));
+        let mut account_type = cell(row, account_type_i).trim().to_string();
+        if account_type.is_empty() {
+            account_type = role.clone();
+        }
         by_email.insert(
             email.clone(),
             AccessRow {
@@ -111,6 +120,7 @@ pub fn parse_access_values(values: &[Vec<String>]) -> Result<Vec<AccessRow>> {
                 email,
                 role,
                 active,
+                account_type,
                 last_synced: String::new(),
             },
         );
@@ -132,11 +142,12 @@ pub fn fetch_access_rows_with(allow_bootstrap: bool) -> Result<Vec<AccessRow>> {
     match fetch_access_values(&account) {
         Ok(values) => parse_access_values(&values),
         Err(err) if allow_bootstrap && is_missing_tab_error(&err.to_string()) => {
+            let target = target_for_kind(KIND_ACCESS)?;
             let headers: Vec<String> = crate::hive::ACCESS_HEADERS
                 .iter()
                 .map(|s| (*s).to_string())
                 .collect();
-            create_tab_with_headers(&account, ACCESS_TAB, &headers)?;
+            create_tab_with_headers_on(&account, &target.spreadsheet_id, &target.tab, &headers)?;
             parse_access_values(&[headers])
         }
         Err(err) => Err(err),
@@ -152,12 +163,19 @@ pub fn apply_access_rows(books: &mut LocalBooks, rows: &[AccessRow]) -> Result<(
     {
         let mut stmt = tx.prepare(
             r#"
-            INSERT INTO access_cache (email, name, role, active, last_synced)
-            VALUES (?1, ?2, ?3, ?4, ?5)
+            INSERT INTO access_cache (email, name, role, active, last_synced, account_type)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6)
             "#,
         )?;
         for row in rows {
-            stmt.execute(params![row.email, row.name, row.role, row.active, synced])?;
+            stmt.execute(params![
+                row.email,
+                row.name,
+                row.role,
+                row.active,
+                synced,
+                row.account_type
+            ])?;
         }
     }
     tx.execute(
@@ -177,7 +195,7 @@ pub fn refresh_access(books: &mut LocalBooks) -> Result<AccessSnapshot> {
 pub fn list_access(books: &LocalBooks) -> Result<Vec<AccessRow>> {
     let mut stmt = books.conn().prepare(
         r#"
-        SELECT name, email, role, active, last_synced
+        SELECT name, email, role, active, last_synced, COALESCE(account_type, role)
         FROM access_cache
         ORDER BY name COLLATE NOCASE, email COLLATE NOCASE
         "#,
@@ -189,6 +207,7 @@ pub fn list_access(books: &LocalBooks) -> Result<Vec<AccessRow>> {
             role: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
             active: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
             last_synced: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
+            account_type: row.get::<_, Option<String>>(5)?.unwrap_or_default(),
         })
     })?;
     let mut out = Vec::new();
@@ -224,15 +243,16 @@ pub fn upsert_access_cache(books: &mut LocalBooks, row: &AccessRow) -> Result<()
         .query_row("SELECT datetime('now')", [], |r| r.get(0))?;
     books.conn().execute(
         r#"
-        INSERT INTO access_cache (email, name, role, active, last_synced)
-        VALUES (?1, ?2, ?3, ?4, ?5)
+        INSERT INTO access_cache (email, name, role, active, last_synced, account_type)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6)
         ON CONFLICT(email) DO UPDATE SET
           name = excluded.name,
           role = excluded.role,
           active = excluded.active,
-          last_synced = excluded.last_synced
+          last_synced = excluded.last_synced,
+          account_type = excluded.account_type
         "#,
-        params![row.email, row.name, row.role, row.active, synced],
+        params![row.email, row.name, row.role, row.active, synced, row.account_type],
     )?;
     Ok(())
 }
@@ -279,20 +299,28 @@ pub fn write_access_row(books: &mut LocalBooks, payload: AccessWrite) -> Result<
             "Role must be admin or operator.",
         ));
     }
-    let account = load_service_account()?;
-    let values = match fetch_access_values(&account) {
+    let sa = load_service_account()?;
+    let target = target_for_kind(KIND_ACCESS)?;
+    let values = match fetch_access_values(&sa) {
         Ok(v) => v,
         Err(err) if is_missing_tab_error(&err.to_string()) => {
             let headers: Vec<String> = crate::hive::ACCESS_HEADERS
                 .iter()
                 .map(|s| (*s).to_string())
                 .collect();
-            create_tab_with_headers(&account, ACCESS_TAB, &headers)?;
+            create_tab_with_headers_on(&sa, &target.spreadsheet_id, &target.tab, &headers)?;
             vec![headers]
         }
         Err(err) => return Err(err),
     };
-    let cells = vec![name.clone(), email.clone(), role.clone(), active.clone()];
+    let account_type = role.clone();
+    let cells = vec![
+        name.clone(),
+        email.clone(),
+        role.clone(),
+        active.clone(),
+        account_type.clone(),
+    ];
     let header_at = values
         .iter()
         .take(10)
@@ -318,16 +346,17 @@ pub fn write_access_row(books: &mut LocalBooks, payload: AccessWrite) -> Result<
         }
     }
     if let Some(sheet_row) = found_row {
-        let a1 = format!("A{sheet_row}:D{sheet_row}");
-        update_sheet_row(&account, ACCESS_TAB, &a1, &cells)?;
+        let a1 = format!("A{sheet_row}:E{sheet_row}");
+        update_row_on(&sa, &target.spreadsheet_id, &target.tab, &a1, &cells)?;
     } else {
-        append_sheet_row(&account, ACCESS_TAB, &cells)?;
+        append_row_on(&sa, &target.spreadsheet_id, &target.tab, &cells)?;
     }
     let row = AccessRow {
         name,
         email,
         role,
         active,
+        account_type,
         last_synced: String::new(),
     };
     upsert_access_cache(books, &row)?;
@@ -338,7 +367,7 @@ pub fn find_access_row(books: &LocalBooks, email: &str) -> Result<Option<AccessR
     let email = normalize_email(email);
     let mut stmt = books.conn().prepare(
         r#"
-        SELECT name, email, role, active, last_synced
+        SELECT name, email, role, active, last_synced, COALESCE(account_type, role)
         FROM access_cache
         WHERE email = ?1 COLLATE NOCASE
         LIMIT 1
@@ -353,6 +382,7 @@ pub fn find_access_row(books: &LocalBooks, email: &str) -> Result<Option<AccessR
             role: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
             active: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
             last_synced: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
+            account_type: row.get::<_, Option<String>>(5)?.unwrap_or_default(),
         })),
     }
 }
@@ -406,6 +436,7 @@ mod tests {
             email: email.into(),
             role: role.into(),
             active: active.into(),
+            account_type: role.to_string(),
             last_synced: String::new(),
         }
     }
