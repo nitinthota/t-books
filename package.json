@@ -25,7 +25,7 @@
     "format": "prettier --write .",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build",
+    "tauri:build": "tauri build && node scripts/rename-installer.mjs",
     "build:tauri": "npx vite build --config vite.tauri.config.ts"
   },
   "dependencies": {
