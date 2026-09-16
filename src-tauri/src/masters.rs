@@ -2,7 +2,7 @@
 
 use rusqlite::params;
 
-use crate::core::business_rules::{
+use crate::core::business_rules::purchase_status::{
     can_unmerge_voucher, merge_blocked_reason, vendor_merge_key, MergeVoucherHint,
 };
 use crate::db::LocalBooks;
@@ -81,7 +81,7 @@ fn load_hint(books: &LocalBooks, voucher_number: i64) -> Result<MergeVoucherHint
     };
     Ok(MergeVoucherHint {
         id: voucher_number.to_string(),
-        vendor_key: vendor_merge_key(&vendor, None),
+        vendor_key: vendor_merge_key(Some(&vendor), None),
         po_id: if linked_po.trim().is_empty() {
             None
         } else {
@@ -106,16 +106,15 @@ pub fn merge_onto_purchase(
             "Posted child numbers like PUR-0001-01 are never rewritten.",
         ));
     }
-    let bill = books
+    let bill: String = books
         .conn()
         .query_row(
-            "SELECT vendor FROM purchase_po WHERE po_number = ?1 COLLATE NOCASE LIMIT 1",
+            "SELECT COALESCE(vendor,'') FROM purchase_po WHERE po_number = ?1 COLLATE NOCASE LIMIT 1",
             params![po],
-            |row| row.get::<_, Option<String>>(0),
+            |row| row.get(0),
         )
         .map_err(|_| BooksError::from("That purchase bill was not found on this PC."))?;
-    let vendor = bill.unwrap_or_default();
-    let target_key = vendor_merge_key(&vendor, None);
+    let target_key = vendor_merge_key(Some(&bill), None);
     let mut hints = Vec::new();
     for n in voucher_numbers {
         hints.push(load_hint(books, *n)?);
