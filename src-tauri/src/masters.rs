@@ -3,7 +3,8 @@
 use rusqlite::params;
 
 use crate::core::business_rules::purchase_status::{
-    can_unmerge_voucher, merge_blocked_reason, vendor_merge_key, MergeVoucherHint,
+    can_unmerge_voucher, is_child_pay_number, merge_blocked_reason, vendor_merge_key,
+    MergeVoucherHint,
 };
 use crate::db::LocalBooks;
 use crate::{BooksError, Result};
@@ -109,7 +110,7 @@ pub fn merge_onto_purchase(
     if po.is_empty() {
         return Err(BooksError::from("Choose a purchase to merge onto."));
     }
-    if po.contains('.') {
+    if po.contains('.') || is_child_pay_number(Some(po), None) {
         return Err(BooksError::from(
             "Posted child numbers like PUR-0001-01 are never rewritten.",
         ));
@@ -281,6 +282,8 @@ mod tests {
     fn refuses_dotted_child_target() {
         let mut books = open_memory().unwrap();
         seed(&mut books);
+        let dotted = merge_onto_purchase(&mut books, "20.1", &[20]).unwrap_err();
+        assert!(dotted.to_string().contains("never rewritten"));
         let err = merge_onto_purchase(&mut books, "PUR-0001-01", &[20]).unwrap_err();
         assert!(err.to_string().contains("never rewritten"));
     }
