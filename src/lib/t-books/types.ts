@@ -366,6 +366,15 @@ export type CasOutcome =
 export type VendorRef = {
   vendor: string;
   gst: string;
+  bank?: string;
+  accountNumber?: string;
+  ifsc?: string;
+};
+
+export type MergeReport = {
+  poNumber: string;
+  linked: number[];
+  skipped: string[];
 };
 
 export type NavId =
