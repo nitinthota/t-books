@@ -153,9 +153,11 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
-                let state: tauri::State<AppState> = window.state();
-                if let Ok(books) = state.books.lock() {
-                    let _ = crate::auto_backup(&books);
+                if let Some(state) = window.try_state::<AppState>() {
+                    let locked = state.books.lock().ok();
+                    if let Some(books) = locked.as_ref() {
+                        let _ = crate::auto_backup(books);
+                    }
                 }
             }
         })
