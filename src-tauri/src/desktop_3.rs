@@ -169,9 +169,30 @@ fn list_projects(state: tauri::State<AppState>) -> std::result::Result<Vec<Strin
 }
 
 #[tauri::command]
-fn list_vendors(state: tauri::State<AppState>) -> std::result::Result<Vec<VendorRef>, String> {
+fn list_vendors(state: tauri::State<AppState>) -> std::result::Result<Vec<crate::VendorRow>, String> {
     let books = state.books.lock().expect("local books");
-    crate::office::list_vendors(&books).map_err(map_err)
+    crate::masters::list_vendors(&books).map_err(map_err)
+}
+
+#[tauri::command]
+fn merge_onto_purchase(
+    state: tauri::State<AppState>,
+    po_number: String,
+    voucher_numbers: Vec<i64>,
+) -> std::result::Result<crate::MergeReport, String> {
+    require_mutate(&state)?;
+    let mut books = state.books.lock().expect("local books");
+    crate::merge_onto_purchase(&mut books, &po_number, &voucher_numbers).map_err(map_err)
+}
+
+#[tauri::command]
+fn unmerge_voucher(
+    state: tauri::State<AppState>,
+    voucher_number: i64,
+) -> std::result::Result<(), String> {
+    require_mutate(&state)?;
+    let mut books = state.books.lock().expect("local books");
+    crate::unmerge_voucher(&mut books, voucher_number).map_err(map_err)
 }
 
 #[tauri::command]
