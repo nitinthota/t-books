@@ -2,8 +2,13 @@ name: build
 
 on:
   push:
-    branches: [main]
   pull_request:
+  workflow_dispatch:
+    inputs:
+      build_installer:
+        description: "Also build T-Books-Setup.exe"
+        type: boolean
+        default: false
 
 jobs:
   check:
@@ -32,6 +37,8 @@ jobs:
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib
 
   windows-nsis:
+    if: github.event_name == 'workflow_dispatch' && inputs.build_installer
+    needs: check
     runs-on: windows-latest
     timeout-minutes: 60
     steps:
@@ -68,4 +75,3 @@ jobs:
           name: T-Books-Setup
           path: dist/installers/T-Books-Setup.exe
           if-no-files-found: error
-
