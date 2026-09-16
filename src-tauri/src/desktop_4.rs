@@ -237,7 +237,9 @@ pub fn run() {
             open_document,
             search_office,
             list_projects,
-            list_vendors
+            list_vendors,
+            merge_onto_purchase,
+            unmerge_voucher
         ])
         .run(tauri::generate_context!())
         .expect("error while running T Books");
