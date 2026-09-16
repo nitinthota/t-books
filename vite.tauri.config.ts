@@ -6,6 +6,7 @@ import tailwindcss from "@tailwindcss/vite";
 export default defineConfig({
   root: path.resolve(import.meta.dirname, "tauri-web"),
   publicDir: path.resolve(import.meta.dirname, "public"),
+  base: "./",
   plugins: [tailwindcss(), viteReact()],
   resolve: {
     tsconfigPaths: true,
