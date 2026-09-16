@@ -54,6 +54,13 @@ test("Windows NSIS packaging is per-user T Books with no updater bundle", () => 
   assert.match(workflow, /npm run tauri:build/);
 });
 
+test("Tauri CSS scans the React tree so layout utilities ship", () => {
+  const css = readFileSync(join(root, "src/styles.css"), "utf8");
+  const vite = readFileSync(join(root, "vite.tauri.config.ts"), "utf8");
+  assert.match(css, /@source "\.\/\*\*\/\*\.\{ts,tsx\}"/);
+  assert.match(vite, /base: "\.\/"/);
+});
+
 test("dummy tokens and invalid A stay out of books", () => {
   assert.equal(OWNER_EMAIL, "thotanitin123@gmail.com");
   assert.equal(isDummySerial("VOUCHER_1001"), true);
