@@ -67,7 +67,10 @@ jobs:
           fi
 
       - name: Build T-Books-Setup.exe
-        run: npm run tauri:build
+        shell: bash
+        run: |
+          npm run tauri:build
+          node scripts/rename-installer.mjs
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
