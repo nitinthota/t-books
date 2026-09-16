@@ -105,7 +105,7 @@
       "title": "Loopbooks — Purchase orders",
       "id": "15l8y0e4NRVdI0vFt4DAxNUeTvWnwnZvzvnhoKBGpgEY",
       "folderKey": "work",
-      "kind": "purchase_report",
+      "kind": "purchase",
       "tab": "Purchase orders",
       "write": true
     },
@@ -207,15 +207,10 @@
     },
     {
       "workbookKey": "purchase_orders",
-      "tab": "Purchase",
-      "kind": "purchase",
-      "write": true
-    },
-    {
-      "workbookKey": "purchase_orders",
       "tab": "Purchase payments",
       "kind": "payment",
-      "write": true
+      "write": true,
+      "note": "PAY-n against PUR-n. Do not write these onto Loopbooks — Payments (those are voucher payment lines)."
     },
     {
       "workbookKey": "sales_orders",

@@ -63,7 +63,7 @@ fn money(n: f64) -> String {
     format!("{n:.2}")
 }
 
-fn slot_occupied(slot: &PaymentBlock) -> bool {
+pub fn slot_occupied(slot: &PaymentBlock) -> bool {
     slot.pi_value_rupees.unwrap_or(0.0) != 0.0
         || slot.paid_rupees.unwrap_or(0.0) != 0.0
         || slot.tds_rupees.unwrap_or(0.0) != 0.0
@@ -138,6 +138,33 @@ pub fn register_cells_for_voucher(v: &ParsedVoucher) -> Vec<String> {
         .collect::<Vec<_>>()
         .join(" · ");
     register_cells_from_parsed(v, &totals, &purpose, &remarks)
+}
+
+/// Payment lines on the same voucher. Key `{voucher}#{n}`. Not a second bill.
+pub fn payment_lines_for_voucher(v: &ParsedVoucher) -> Vec<(String, Vec<String>)> {
+    let mut out = Vec::new();
+    let mut pay_no = 0i32;
+    for slot in &v.payments {
+        if !slot_occupied(slot) {
+            continue;
+        }
+        pay_no += 1;
+        let key = format!("{}#{}", v.voucher_number, pay_no);
+        out.push((
+            key,
+            vec![
+                v.voucher_number.to_string(),
+                pay_no.to_string(),
+                slot.payment_date.clone(),
+                money(slot.paid_rupees.unwrap_or(0.0)),
+                money(slot.tds_rupees.unwrap_or(0.0)),
+                slot.payment_details.clone(),
+                slot.description.clone(),
+                slot.remarks.clone(),
+            ],
+        ));
+    }
+    out
 }
 
 fn log_row(
@@ -320,25 +347,10 @@ pub fn plan_from_raw_values(values: &[Vec<String>], run_id: &str) -> MigrationPl
             ]);
         }
 
-        let mut pay_no = 0i32;
-        for slot in &v.payments {
-            if !slot_occupied(slot) {
-                continue;
-            }
-            pay_no += 1;
-            let pay_key = format!("{}#{}", v.voucher_number, pay_no);
+        for (pay_key, cells) in payment_lines_for_voucher(v) {
             payments.push(StructuredPayment {
                 key: pay_key.clone(),
-                cells: vec![
-                    v.voucher_number.to_string(),
-                    pay_no.to_string(),
-                    slot.payment_date.clone(),
-                    money(slot.paid_rupees.unwrap_or(0.0)),
-                    money(slot.tds_rupees.unwrap_or(0.0)),
-                    slot.payment_details.clone(),
-                    slot.description.clone(),
-                    slot.remarks.clone(),
-                ],
+                cells,
             });
             log.push(log_row(
                 run_id,

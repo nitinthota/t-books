@@ -63,7 +63,7 @@ function BoardShellInner() {
       onSearchOpen={(id, hit) => go(id, hit)}
       onSignOut={() => requestLeave(logout)}
     >
-      <div className="mx-auto w-full max-w-6xl px-6 py-7">
+      <div key={active} className="mx-auto w-full max-w-6xl px-6 py-7">
         {active === "board" ? (
           <section className="enter">
             <h1 className="text-3xl font-medium tracking-tight">Board</h1>
@@ -148,7 +148,7 @@ const BoardBody = memo(function BoardBody({ onOpenVouchers }: { onOpenVouchers: 
           <button
             type="button"
             onClick={onOpenVouchers}
-            className="pressable mt-4 w-full rounded-lg bg-paper-raised p-5 text-left ring-1 ring-line"
+            className="board-card pressable mt-4 w-full rounded-lg bg-paper-raised p-5 text-left ring-1 ring-line"
           >
             <div className="grid grid-cols-3 gap-4">
               <BoardFigure label="Vouchers" value={String(count)} />

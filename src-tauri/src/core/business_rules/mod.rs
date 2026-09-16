@@ -45,8 +45,9 @@ pub use payment::{
 pub use purchase_status::{
     alloc_method_for_purchase, alloc_method_label, classify_purchase_payment, format_payment_number,
     is_child_pay_number, is_legacy_pay_number, is_pay_voucher_number, normalize_alloc_method,
-    parse_pay_voucher_seq, payment_matches_filters, purchase_pay_status, tax_invoice_missing,
-    AllocMethod, PaymentClass, PaymentFilterKey, PurchasePayStatus, PurchaseType,
+    parse_pay_voucher_seq, payment_allocation_label, payment_class_label, payment_matches_filters,
+    payment_ordinal, purchase_pay_status, purchase_type_label, tax_invoice_missing, AllocMethod,
+    PaymentClass, PaymentFilterKey, PurchasePayStatus, PurchaseType,
 };
 pub use rbac::{can_mutate, can_open_access, can_refresh, can_write, require_admin, require_write};
 pub use status::{is_na_tax_inv, payment_status, status_tone, tax_flag_for, StatusTone, TaxFlag};

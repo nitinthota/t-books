@@ -1,7 +1,10 @@
 //! Submit office rows to hive tabs when those tabs exist.
 //! Missing tab → keep local; owner may bootstrap headers only. Never wipe.
 
-use crate::core::business_rules::sha256_hex;
+use crate::core::business_rules::{
+    alloc_method_label, calc_po, paise_to_rupees, payment_class_label, payment_ordinal,
+    purchase_pay_status, purchase_type_label, rupees_to_paise, sha256_hex, PoItemInput, TermUnit,
+};
 use crate::db::LocalBooks;
 use crate::hive::{
     hive_conflict_message, is_live_dummy_key, sales_po_hive_key, submit_hive_row, tab_name,
@@ -9,7 +12,7 @@ use crate::hive::{
     KIND_PAYMENT, KIND_PURCHASE, KIND_SALARY, KIND_SALES_PO,
 };
 use crate::online::is_online;
-use crate::hive_plan::{report_headers, status_targets, target_for_kind};
+use crate::hive_plan::{report_headers, status_targets, target_for_kind, KIND_VOUCHER_PAYMENT};
 use crate::sheets::{
     append_row_on, create_tab_with_headers_on, credentials_exist, fetch_values_on,
     is_missing_tab_error, load_service_account, update_row_on, ServiceAccount,
@@ -41,55 +44,242 @@ pub fn office_cells(books: &LocalBooks, kind: &str, key: &str) -> Result<(Vec<St
     }
 }
 
+fn rupees_cell(n: f64) -> String {
+    if n.is_finite() {
+        format!("{n:.2}")
+    } else {
+        "0.00".into()
+    }
+}
+
+fn sheet_date(raw: &str) -> String {
+    let s = raw.trim();
+    if s.len() >= 10 {
+        s[..10].to_string()
+    } else {
+        s.to_string()
+    }
+}
+
+fn col_letter(n: usize) -> String {
+    if n == 0 {
+        return "A".into();
+    }
+    let mut n = n;
+    let mut out = String::new();
+    while n > 0 {
+        n -= 1;
+        out.insert(0, (b'A' + (n % 26) as u8) as char);
+        n /= 26;
+    }
+    out
+}
+
+fn a1_row(row: u32, cols: usize) -> String {
+    format!("A{row}:{}{row}", col_letter(cols.max(1)))
+}
+
 fn load_purchase(books: &LocalBooks, key: &str) -> Result<(Vec<String>, String, i64)> {
-    books
-        .conn()
+    let conn = books.conn();
+    let (id, po_number, project, vendor, po_type, goods, tax_no, tax_date, total, created, fp, rev): (
+        i64,
+        String,
+        String,
+        String,
+        String,
+        i64,
+        String,
+        String,
+        f64,
+        String,
+        String,
+        i64,
+    ) = conn
         .query_row(
-            "SELECT po_number, project, vendor, type, goods_received, tax_invoice_no, tax_invoice_date,
-                    total_value, COALESCE(source_hash,''), COALESCE(hive_rev,0)
+            "SELECT id, po_number, COALESCE(project,''), COALESCE(vendor,''), COALESCE(type,''),
+                    COALESCE(goods_received,0), COALESCE(tax_invoice_no,''), COALESCE(tax_invoice_date,''),
+                    COALESCE(total_value,0), COALESCE(created_at,''), COALESCE(source_hash,''), COALESCE(hive_rev,0)
              FROM purchase_po WHERE po_number = ?1 COLLATE NOCASE LIMIT 1",
             rusqlite::params![key],
             |row| {
-                let cells = vec![
-                    row.get::<_, String>(0)?,
-                    row.get::<_, Option<String>>(1)?.unwrap_or_default(),
-                    row.get::<_, Option<String>>(2)?.unwrap_or_default(),
-                    row.get::<_, Option<String>>(3)?.unwrap_or_default(),
-                    if row.get::<_, i64>(4)? != 0 { "Yes" } else { "No" }.into(),
-                    row.get::<_, Option<String>>(5)?.unwrap_or_default(),
-                    row.get::<_, Option<String>>(6)?.unwrap_or_default(),
-                    row.get::<_, Option<f64>>(7)?.unwrap_or(0.0).to_string(),
-                ];
-                let fp: String = row.get(8)?;
-                let rev: i64 = row.get(9)?;
-                Ok((cells, fp, rev))
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                    row.get(6)?,
+                    row.get(7)?,
+                    row.get(8)?,
+                    row.get(9)?,
+                    row.get(10)?,
+                    row.get(11)?,
+                ))
             },
         )
-        .map_err(|_| BooksError::from(format!("{key} is not on this PC.")))
+        .map_err(|_| BooksError::from(format!("{key} is not on this PC.")))?;
+
+    let mut items: Vec<PoItemInput> = Vec::new();
+    let mut item_json = Vec::new();
+    if let Ok(mut stmt) = conn.prepare(
+        "SELECT COALESCE(item_name,''), COALESCE(description,''), COALESCE(qty,0), COALESCE(rate,0),
+                COALESCE(gst_pct,0), COALESCE(amount,0)
+         FROM purchase_po_items WHERE po_id = ?1 ORDER BY id",
+    ) {
+        if let Ok(mapped) = stmt.query_map(rusqlite::params![id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, f64>(2)?,
+                row.get::<_, f64>(3)?,
+                row.get::<_, f64>(4)?,
+                row.get::<_, f64>(5)?,
+            ))
+        }) {
+            for row in mapped.flatten() {
+                item_json.push(serde_json::json!({
+                    "item": row.0,
+                    "description": row.1,
+                    "qty": row.2,
+                    "rate": row.3,
+                    "gst": row.4,
+                    "line": row.5,
+                }));
+                items.push(PoItemInput {
+                    item_name: row.0,
+                    description: row.1,
+                    qty: row.2,
+                    unit_rate_rupees: row.3,
+                    gst_pct: row.4,
+                });
+            }
+        }
+    }
+
+    let paid: f64 = conn
+        .query_row(
+            "SELECT COALESCE(SUM(amount_rupees),0) FROM purchase_payments WHERE po_number = ?1 COLLATE NOCASE",
+            rusqlite::params![&po_number],
+            |row| row.get(0),
+        )
+        .unwrap_or(0.0);
+
+    let (subtotal, gst, grand, terms) = if items.is_empty() {
+        (total, 0.0, total, String::new())
+    } else {
+        let summary = calc_po(0.0, TermUnit::Days, paid, &items);
+        (
+            paise_to_rupees(summary.subtotal_paise),
+            paise_to_rupees(summary.gst_paise),
+            paise_to_rupees(summary.grand_total_paise),
+            if summary.payment_term_days > 0 {
+                format!("{} days", summary.payment_term_days)
+            } else {
+                String::new()
+            },
+        )
+    };
+    let status = purchase_pay_status(rupees_to_paise(grand), rupees_to_paise(paid))
+        .as_str()
+        .to_string();
+    let notes = [
+        if tax_no.is_empty() && tax_date.is_empty() {
+            String::new()
+        } else {
+            format!("Tax {tax_no} {tax_date}")
+        },
+    ]
+    .into_iter()
+    .filter(|s| !s.trim().is_empty())
+    .collect::<Vec<_>>()
+    .join(" · ");
+
+    let cells = vec![
+        po_number,
+        sheet_date(&created),
+        vendor,
+        project,
+        status,
+        rupees_cell(subtotal),
+        rupees_cell(gst),
+        rupees_cell(grand),
+        rupees_cell(paid),
+        rupees_cell(grand - paid),
+        terms,
+        notes,
+        purchase_type_label(Some(&po_type)).to_string(),
+        if goods != 0 { "Yes" } else { "No" }.into(),
+        tax_no,
+        tax_date,
+        serde_json::to_string(&item_json).unwrap_or_else(|_| "[]".into()),
+    ];
+    Ok((cells, fp, rev))
 }
 
 fn load_payment(books: &LocalBooks, key: &str) -> Result<(Vec<String>, String, i64)> {
-    books
-        .conn()
+    let conn = books.conn();
+    let (id, pay_number, po_number, vendor, amount, alloc, class, pay_date, project, remarks, fp, rev): (
+        i64,
+        String,
+        String,
+        String,
+        f64,
+        String,
+        String,
+        String,
+        String,
+        String,
+        String,
+        i64,
+    ) = conn
         .query_row(
-            "SELECT pay_number, po_number, vendor, amount_rupees, alloc_method, pay_class, pay_date,
-                    COALESCE(source_hash,''), COALESCE(hive_rev,0)
+            "SELECT id, pay_number, COALESCE(po_number,''), COALESCE(vendor,''), COALESCE(amount_rupees,0),
+                    COALESCE(alloc_method,''), COALESCE(pay_class,''), COALESCE(pay_date,''),
+                    COALESCE(project,''), COALESCE(remarks,''), COALESCE(source_hash,''), COALESCE(hive_rev,0)
              FROM purchase_payments WHERE pay_number = ?1 COLLATE NOCASE LIMIT 1",
             rusqlite::params![key],
             |row| {
-                let cells = vec![
-                    row.get::<_, String>(0)?,
-                    row.get::<_, Option<String>>(1)?.unwrap_or_default(),
-                    row.get::<_, Option<String>>(2)?.unwrap_or_default(),
-                    row.get::<_, Option<f64>>(3)?.unwrap_or(0.0).to_string(),
-                    row.get::<_, Option<String>>(4)?.unwrap_or_default(),
-                    row.get::<_, Option<String>>(5)?.unwrap_or_default(),
-                    row.get::<_, Option<String>>(6)?.unwrap_or_default(),
-                ];
-                Ok((cells, row.get(7)?, row.get(8)?))
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                    row.get(6)?,
+                    row.get(7)?,
+                    row.get(8)?,
+                    row.get(9)?,
+                    row.get(10)?,
+                    row.get(11)?,
+                ))
             },
         )
-        .map_err(|_| BooksError::from(format!("{key} is not on this PC.")))
+        .map_err(|_| BooksError::from(format!("{key} is not on this PC.")))?;
+
+    let seq: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM purchase_payments
+             WHERE po_number = ?1 COLLATE NOCASE AND id <= ?2",
+            rusqlite::params![&po_number, id],
+            |row| row.get(0),
+        )
+        .unwrap_or(1);
+
+    let cells = vec![
+        pay_number,
+        payment_ordinal(seq),
+        po_number,
+        vendor,
+        rupees_cell(amount),
+        alloc_method_label(Some(&alloc)).to_string(),
+        payment_class_label(Some(&class)).to_string(),
+        pay_date,
+        project,
+        remarks,
+    ];
+    Ok((cells, fp, rev))
 }
 
 fn load_salary(books: &LocalBooks, key: &str) -> Result<(Vec<String>, String, i64)> {
@@ -381,21 +571,57 @@ impl GoogleOfficeHive {
     }
 }
 
+fn looks_like_fp(raw: &str) -> bool {
+    let s = raw.trim();
+    s.len() == 64 && s.chars().all(|c| c.is_ascii_hexdigit())
+}
+
 fn parse_tab_rows(values: &[Vec<String>], kind: &str) -> Vec<HiveRow> {
+    let header = values.first();
+    let fp_idx = header.and_then(|h| {
+        h.iter()
+            .position(|c| c.trim().eq_ignore_ascii_case("fp"))
+    });
+    let rev_idx = header.and_then(|h| {
+        h.iter()
+            .position(|c| c.trim().eq_ignore_ascii_case("rev"))
+    });
     let mut out = Vec::new();
     for (i, row) in values.iter().enumerate() {
         if i == 0 {
             continue;
         }
-        let key = row.first().map(|s| s.trim().to_string()).unwrap_or_default();
-        if key.is_empty() {
-            continue;
-        }
-        let fp = row.get(row.len().saturating_sub(2)).cloned().unwrap_or_default();
-        let rev = row
-            .last()
-            .and_then(|s| s.parse::<i64>().ok())
-            .unwrap_or(0);
+        let key = if kind == KIND_VOUCHER_PAYMENT {
+            let voucher = row.first().map(|s| s.trim()).unwrap_or("");
+            let n = row.get(1).map(|s| s.trim()).unwrap_or("");
+            if voucher.is_empty() || n.is_empty() {
+                continue;
+            }
+            format!("{voucher}#{n}")
+        } else {
+            let k = row.first().map(|s| s.trim().to_string()).unwrap_or_default();
+            if k.is_empty() {
+                continue;
+            }
+            k
+        };
+        let (fp, rev) = if let (Some(fi), Some(ri)) = (fp_idx, rev_idx) {
+            (
+                row.get(fi).cloned().unwrap_or_default(),
+                row.get(ri).and_then(|s| s.trim().parse::<i64>().ok()).unwrap_or(0),
+            )
+        } else {
+            let last = row.last().cloned().unwrap_or_default();
+            let second = row
+                .get(row.len().saturating_sub(2))
+                .cloned()
+                .unwrap_or_default();
+            if looks_like_fp(&second) {
+                (second, last.trim().parse::<i64>().ok().unwrap_or(0))
+            } else {
+                (String::new(), 0)
+            }
+        };
         out.push(HiveRow {
             key,
             kind: kind.to_string(),
@@ -488,7 +714,7 @@ impl Hive for GoogleOfficeHive {
         let next_rev = base_rev + 1;
         let mut written = body;
         written.push(next_rev.to_string());
-        let last = format!("A{sheet_row}:Z{sheet_row}");
+        let last = a1_row(*sheet_row, written.len());
         update_row_on(
             &self.account,
             &target.spreadsheet_id,
@@ -520,7 +746,30 @@ impl Hive for GoogleOfficeHive {
             ));
         }
         match fetch_values_on(&self.account, &target.spreadsheet_id, &target.tab) {
-            Ok(_) => Ok(EnsureTab::Exists),
+            Ok(values) => {
+                let heads = if headers.is_empty() {
+                    report_headers(kind)
+                } else {
+                    headers.to_vec()
+                };
+                if !heads.is_empty() {
+                    let first = values.first().cloned().unwrap_or_default();
+                    let short = heads.iter().enumerate().any(|(i, h)| {
+                        first.get(i).map(|s| s.trim()) != Some(h.as_str())
+                    });
+                    if short {
+                        let range = a1_row(1, heads.len());
+                        update_row_on(
+                            &self.account,
+                            &target.spreadsheet_id,
+                            &target.tab,
+                            &range,
+                            &heads,
+                        )?;
+                    }
+                }
+                Ok(EnsureTab::Exists)
+            }
             Err(err) if is_missing_tab_error(&err.to_string()) => {
                 if self.fail_if_missing {
                     return Err(BooksError::from(missing_tab_message(kind)));
@@ -570,7 +819,7 @@ impl GoogleOfficeHive {
             .map(|(i, _)| (i as u32) + 2)
             .collect();
         for sheet_row in existing {
-            let a1 = format!("A{sheet_row}:Z{sheet_row}");
+            let a1 = a1_row(sheet_row, 26);
             let blanks = vec![String::new(); 26];
             update_row_on(
                 &self.account,
@@ -797,6 +1046,87 @@ mod tests {
             }
             other => panic!("{other:?}"),
         }
+    }
+
+    #[test]
+    fn purchase_cells_match_live_tally_headers() {
+        let mut books = open_memory().unwrap();
+        save_purchase_po(
+            &mut books,
+            PurchasePoSave {
+                id: None,
+                project: "CUST_01".into(),
+                vendor: "VEND_02".into(),
+                po_number: "PUR-0001".into(),
+                po_type: "simple".into(),
+                total_value: 10.0,
+                items: vec![],
+                goods_received: false,
+                tax_invoice_no: String::new(),
+                tax_invoice_date: String::new(),
+            },
+        )
+        .unwrap();
+        let (cells, _, _) = office_cells(&books, KIND_PURCHASE, "PUR-0001").unwrap();
+        let headers = report_headers(KIND_PURCHASE);
+        assert_eq!(headers[0], "PO number");
+        assert_eq!(headers[2], "Vendor");
+        assert_eq!(headers[5], "Subtotal ₹");
+        assert_eq!(cells[0], "PUR-0001");
+        assert_eq!(cells[2], "VEND_02");
+        assert_eq!(cells[3], "CUST_01");
+        assert_eq!(cells[4], "Unpaid");
+        assert_eq!(cells[7], "10.00");
+        assert_eq!(cells[12], "Project Expenses");
+        assert_eq!(cells[13], "No");
+        assert_eq!(cells.len() + 2, headers.len());
+    }
+
+    #[test]
+    fn payment_cells_include_first_payment_ordinal() {
+        let mut books = open_memory().unwrap();
+        save_purchase_po(
+            &mut books,
+            PurchasePoSave {
+                id: None,
+                project: "CUST_01".into(),
+                vendor: "VEND_02".into(),
+                po_number: "PURC:0004".into(),
+                po_type: "simple".into(),
+                total_value: 100.0,
+                items: vec![],
+                goods_received: true,
+                tax_invoice_no: "INV-1".into(),
+                tax_invoice_date: "2026-04-01".into(),
+            },
+        )
+        .unwrap();
+        crate::office::save_purchase_payment(
+            &mut books,
+            crate::office::PurchasePaymentSave {
+                id: None,
+                pay_number: "PAY-0010".into(),
+                po_number: "PURC:0004".into(),
+                vendor: "VEND_02".into(),
+                amount_rupees: 40.0,
+                alloc_method: "against".into(),
+                pay_date: "2026-04-02".into(),
+                remarks: "first against bill".into(),
+            },
+        )
+        .unwrap();
+        let (cells, _, _) = office_cells(&books, KIND_PAYMENT, "PAY-0010").unwrap();
+        assert_eq!(cells[0], "PAY-0010");
+        assert_eq!(cells[1], "1st payment");
+        assert_eq!(cells[2], "PURC:0004");
+        assert_eq!(cells[4], "40.00");
+        assert_eq!(tab_name(KIND_PURCHASE), "Purchase orders");
+        let target = target_for_kind(KIND_PURCHASE).unwrap();
+        assert_eq!(target.tab, "Purchase orders");
+        assert_eq!(target.spreadsheet_id, "15l8y0e4NRVdI0vFt4DAxNUeTvWnwnZvzvnhoKBGpgEY");
+        let pay_target = target_for_kind(KIND_PAYMENT).unwrap();
+        assert_eq!(pay_target.tab, "Purchase payments");
+        assert_eq!(pay_target.spreadsheet_id, target.spreadsheet_id);
     }
 
     #[test]

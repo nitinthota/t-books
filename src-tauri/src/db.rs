@@ -378,6 +378,14 @@ fn migrate(conn: &Connection) -> Result<()> {
           ON purchase_payments(pay_number COLLATE NOCASE);
         CREATE INDEX IF NOT EXISTS idx_purchase_payments_po ON purchase_payments(po_number);
 
+        CREATE TABLE IF NOT EXISTS hive_row_rev (
+          kind TEXT NOT NULL,
+          key TEXT NOT NULL,
+          source_hash TEXT NOT NULL DEFAULT '',
+          hive_rev INTEGER NOT NULL DEFAULT 0,
+          PRIMARY KEY (kind, key)
+        );
+
         CREATE TABLE IF NOT EXISTS rules (
           id TEXT PRIMARY KEY,
           name TEXT NOT NULL,
@@ -471,13 +479,13 @@ mod tests {
                     'vendors', 'projects', 'vouchers', 'voucher_payments',
                     'sales_po', 'sales_po_items', 'purchase_po', 'purchase_po_items',
                     'hr_people', 'hr_payroll', 'inventory', 'logistics', 'documents',
-                    'pending_submit', 'purchase_payments', 'rules'
+                    'pending_submit', 'purchase_payments', 'rules', 'hive_row_rev'
                 )",
                 [],
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(count, 19);
+        assert_eq!(count, 20);
         let users: i64 = books
             .conn()
             .query_row("SELECT COUNT(*) FROM users_local", [], |row| row.get(0))
@@ -501,7 +509,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, "10");
+        assert_eq!(version, "11");
         let logic: String = books
             .conn()
             .query_row(

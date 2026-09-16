@@ -24,7 +24,12 @@ test("hive-map keeps the raw sheet read-only and off the live voucher tab", () =
   assert.equal(access.tab, "Access");
   assert.notEqual(access.id, map.rawSource.spreadsheetId);
   assert.equal(tabName("voucher"), "Voucher register");
+  assert.equal(tabName("purchase"), "Purchase orders");
   assert.equal(tabName("payment"), "Purchase payments");
+  const purchase = map.workbooks.find((w) => w.kind === "purchase");
+  assert.ok(purchase);
+  assert.equal(purchase.tab, "Purchase orders");
+  assert.equal(purchase.id, "15l8y0e4NRVdI0vFt4DAxNUeTvWnwnZvzvnhoKBGpgEY");
 });
 
 test("example service account file has no real PEM", () => {
@@ -45,4 +50,9 @@ test("migration log and credentials extra tabs sit on Access workbook", () => {
   const creds = map.extraTabs.find((t) => t.kind === "credentials");
   assert.ok(creds);
   assert.equal(creds.tab, "Credentials");
+  const pay = map.extraTabs.find((t) => t.kind === "payment");
+  assert.ok(pay);
+  assert.equal(pay.tab, "Purchase payments");
+  assert.equal(pay.workbookKey, "purchase_orders");
+  assert.equal(map.extraTabs.some((t) => t.tab === "Purchase" && t.kind === "purchase"), false);
 });

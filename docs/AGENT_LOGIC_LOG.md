@@ -59,5 +59,34 @@ Flag GREEN only when:
 3. No view command calls Google
 4. Posted numbers not rewritten
 
-Flag YELLOW if only unused `fetch_sheet_values` warning remains.
-Flag RED on type or test failure — do not build Setup.exe.
+## Logic-check agent (local, 2026-09-17)
+
+Gate:
+- `cargo test --lib` → 130 passed, 0 failed, **no warning: lines**
+- `npm run typecheck` → clean after `npm ci`
+- Views never call Google
+- Posted PUR-n / PAY-n / PUR-n-01 refused as merge targets (`is_child_pay_number` + dotted `20.1`)
+
+**Flag: GREEN — allowed to push and then build Setup.exe**
+Auth excluded. Do not dispatch installer until GitHub `check` job on this commit is green.
+
+## Agent V/H — Voucher open + hive hygiene
+Core:
+- get_voucher_full used by save_voucher (lib path)
+- fetch_sheet_values allowed dead; views never call Google
+- merge refuses PUR-n-01
+- Status: GREEN
+
+## Agent P — Purchase (local)
+Core structure:
+- Type labels: Techsol Purchase | Project Expenses (storage contract/simple)
+- Submit bill only if shouldPostPurchaseBill
+- PAY Submit separate key
+- Status: GREEN — files touched: src/components/t-books/purchase-screen.tsx
+
+## Agent M — Merge persist + Vendors SQLite
+Core structure:
+- list_vendors one query: vendor, gst, bank, accountNumber, ifsc
+- merge_onto_purchase writes vouchers.linked_po + dirty=1
+- unmerge only import
+- Status: GREEN

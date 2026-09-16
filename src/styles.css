@@ -50,6 +50,7 @@
     color: var(--color-ink);
     font-family: var(--font-sans);
     line-height: 1.5;
+    text-rendering: optimizeSpeed;
   }
 
   button:not(:disabled),
@@ -77,7 +78,8 @@
 
 @layer components {
   .enter {
-    animation: t-enter 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation: t-enter 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    contain: layout paint;
   }
 
   .enter-delay-1 {
@@ -99,7 +101,7 @@
     transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
   }
   .pressable:active:not(:disabled) {
-    transform: scale(0.96);
+    transform: scale(0.97);
   }
 
   .ledger-rule {
@@ -110,8 +112,10 @@
   .table-row {
     border-bottom: 1px solid var(--color-line);
     transition-property: background-color;
-    transition-duration: 150ms;
+    transition-duration: 140ms;
     transition-timing-function: ease-out;
+    content-visibility: auto;
+    contain-intrinsic-size: auto 44px;
   }
   .table-row:last-child {
     border-bottom: 0;
@@ -131,16 +135,30 @@
     font-weight: 560;
     line-height: 1.15;
   }
+
+  .board-card {
+    animation: t-enter 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    contain: layout paint;
+    transition:
+      transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+      box-shadow 180ms ease-out;
+  }
+  .board-card:hover {
+    transform: translateY(-1px);
+  }
+  .board-card:active {
+    transform: translateY(0);
+  }
 }
 
 @keyframes t-enter {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translate3d(0, 6px, 0);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translate3d(0, 0, 0);
   }
 }
 
@@ -150,12 +168,12 @@
     opacity: 1;
   }
   50% {
-    opacity: 0.45;
+    opacity: 0.5;
   }
 }
 
 .skeleton {
-  animation: t-pulse 1.2s ease-in-out infinite;
+  animation: t-pulse 1.6s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -163,12 +181,16 @@
   .enter-delay-1,
   .enter-delay-2,
   .enter-delay-3,
-  .enter-delay-4 {
+  .enter-delay-4,
+  .board-card {
     animation: none;
   }
 
   .pressable,
-  .pressable:active:not(:disabled) {
+  .pressable:active:not(:disabled),
+  .board-card,
+  .board-card:hover,
+  .board-card:active {
     transition: none;
     transform: none;
   }

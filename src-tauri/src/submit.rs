@@ -5,11 +5,11 @@ use rusqlite::OptionalExtension;
 use crate::core::business_rules::parse_voucher_number;
 use crate::db::LocalBooks;
 use crate::hive::{
-    bump_pending_attempt, clear_pending, enqueue_submit, pending_payload_json, CasOutcome, Hive,
-    KIND_VOUCHER,
+    bump_pending_attempt, clear_pending, enqueue_submit, fingerprint_cells, get_row_rev,
+    pending_payload_json, set_row_rev, submit_hive_row, CasOutcome, Hive, KIND_VOUCHER,
 };
-use crate::hive_plan::{load_map, refuse_raw_write, target_for_kind};
-use crate::migrate::register_cells_for_voucher;
+use crate::hive_plan::{load_map, refuse_raw_write, report_headers, target_for_kind, KIND_VOUCHER_PAYMENT};
+use crate::migrate::{payment_lines_for_voucher, register_cells_for_voucher};
 use crate::office_sync::GoogleOfficeHive;
 use crate::online::is_online;
 use crate::sheets::{
@@ -369,6 +369,9 @@ pub fn submit_voucher_hive(
                 );
                 return Err(err);
             }
+            if let Some(conflict) = submit_voucher_payment_lines(books, hive, &local.parsed)? {
+                return Ok(conflict);
+            }
             crate::log::event(
                 crate::log::Level::Info,
                 "submit",
@@ -394,6 +397,53 @@ pub fn submit_voucher_hive(
             Err(err)
         }
     }
+}
+
+fn submit_voucher_payment_lines(
+    books: &LocalBooks,
+    hive: &mut dyn Hive,
+    parsed: &ParsedVoucher,
+) -> Result<Option<SubmitOutcome>> {
+    let lines = payment_lines_for_voucher(parsed);
+    if lines.is_empty() {
+        return Ok(None);
+    }
+    if hive
+        .ensure_tab(
+            KIND_VOUCHER_PAYMENT,
+            &report_headers(KIND_VOUCHER_PAYMENT),
+        )
+        .is_err()
+    {
+        return Ok(None);
+    }
+    for (key, cells) in lines {
+        let new_fp = fingerprint_cells(&cells);
+        let (base_fp, base_rev) = get_row_rev(books, KIND_VOUCHER_PAYMENT, &key)?;
+        let payload = pending_payload_json(KIND_VOUCHER_PAYMENT, &key);
+        match submit_hive_row(
+            books,
+            hive,
+            KIND_VOUCHER_PAYMENT,
+            &key,
+            &base_fp,
+            base_rev,
+            &cells,
+            &new_fp,
+            &payload,
+        )? {
+            CasOutcome::Ok { fp, rev, .. } => {
+                set_row_rev(books, KIND_VOUCHER_PAYMENT, &key, &fp, rev)?;
+            }
+            CasOutcome::Conflict { message, .. } => {
+                return Ok(Some(SubmitOutcome::Conflict {
+                    voucher_number: parsed.voucher_number,
+                    message,
+                }));
+            }
+        }
+    }
+    Ok(None)
 }
 
 pub fn submit_voucher(books: &mut LocalBooks, voucher_number: i64) -> Result<SubmitOutcome> {
@@ -595,6 +645,29 @@ mod tests {
         assert_eq!(row.cells[0], "1001");
         assert!(hive.get_row("voucher_raw", "1001").unwrap().is_none());
         assert!(!is_dirty_flag(&books, 1001).unwrap());
+    }
+
+    #[test]
+    fn hive_submit_writes_payment_lines_on_same_voucher() {
+        let mut books = open_memory().unwrap();
+        apply_voucher_rows(&mut books, &parse_voucher_values(&[voucher_row(1001, 0.4)])).unwrap();
+        let mut hive = crate::hive::MemoryHive::default();
+        hive.ensure_tab(KIND_VOUCHER, &report_headers(KIND_VOUCHER))
+            .unwrap();
+        hive.ensure_tab(
+            KIND_VOUCHER_PAYMENT,
+            &report_headers(KIND_VOUCHER_PAYMENT),
+        )
+        .unwrap();
+        let out = submit_voucher_hive(&mut books, 1001, &mut hive).unwrap();
+        assert_eq!(out, SubmitOutcome::Ok { voucher_number: 1001 });
+        let pay = hive
+            .get_row(KIND_VOUCHER_PAYMENT, "1001#1")
+            .unwrap()
+            .expect("payment line 1001#1");
+        assert_eq!(pay.cells[0], "1001");
+        assert_eq!(pay.cells[1], "1");
+        assert!(hive.get_row("voucher_raw", "1001").unwrap().is_none());
     }
 
     #[test]

@@ -3,6 +3,7 @@
 
 use rusqlite::{params, OptionalExtension};
 
+use crate::core::business_rules::sha256_hex;
 use crate::db::LocalBooks;
 use crate::{BooksError, Result};
 
@@ -451,7 +452,7 @@ pub fn tab_name(kind: &str) -> &'static str {
     match kind {
         KIND_ACCESS => "Access",
         KIND_VOUCHER => "Voucher register",
-        KIND_PURCHASE => "Purchase",
+        KIND_PURCHASE => "Purchase orders",
         KIND_PAYMENT => "Purchase payments",
         KIND_SALARY => "Payroll",
         KIND_SALES_PO => "Sales_PO",
@@ -467,25 +468,37 @@ pub fn tab_headers(kind: &str) -> Vec<String> {
         KIND_ACCESS => ACCESS_HEADERS.iter().map(|s| (*s).to_string()).collect(),
         KIND_VOUCHER => VOUCHER_HEADERS.iter().map(|s| (*s).to_string()).collect(),
         KIND_PURCHASE => vec![
-            "po_number".into(),
-            "project".into(),
-            "vendor".into(),
-            "type".into(),
-            "goods_received".into(),
-            "tax_invoice_no".into(),
-            "tax_invoice_date".into(),
-            "total_value".into(),
+            "PO number".into(),
+            "Date".into(),
+            "Vendor".into(),
+            "Project".into(),
+            "Status".into(),
+            "Subtotal ₹".into(),
+            "GST ₹".into(),
+            "Total ₹".into(),
+            "Paid ₹".into(),
+            "Balance ₹".into(),
+            "Payment terms".into(),
+            "Notes".into(),
+            "Type".into(),
+            "Goods received".into(),
+            "Tax invoice".into(),
+            "Tax invoice date".into(),
+            "Items".into(),
             "fp".into(),
             "rev".into(),
         ],
         KIND_PAYMENT => vec![
             "pay_number".into(),
+            "Which payment".into(),
             "po_number".into(),
             "vendor".into(),
             "amount".into(),
             "alloc_method".into(),
             "pay_class".into(),
             "pay_date".into(),
+            "project".into(),
+            "remarks".into(),
             "fp".into(),
             "rev".into(),
         ],
@@ -539,6 +552,33 @@ pub fn tab_headers(kind: &str) -> Vec<String> {
         ],
         _ => vec!["key".into(), "fp".into(), "rev".into()],
     }
+}
+
+pub fn fingerprint_cells(cells: &[String]) -> String {
+    sha256_hex(&cells.join("\n"))
+}
+
+pub fn get_row_rev(books: &LocalBooks, kind: &str, key: &str) -> Result<(String, i64)> {
+    let row = books.conn().query_row(
+        "SELECT COALESCE(source_hash,''), COALESCE(hive_rev,0) FROM hive_row_rev
+         WHERE kind = ?1 AND key = ?2 COLLATE NOCASE LIMIT 1",
+        params![kind, key],
+        |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)),
+    );
+    match row {
+        Ok(v) => Ok(v),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok((String::new(), 0)),
+        Err(err) => Err(err.into()),
+    }
+}
+
+pub fn set_row_rev(books: &LocalBooks, kind: &str, key: &str, fp: &str, rev: i64) -> Result<()> {
+    books.conn().execute(
+        "INSERT INTO hive_row_rev (kind, key, source_hash, hive_rev) VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(kind, key) DO UPDATE SET source_hash = excluded.source_hash, hive_rev = excluded.hive_rev",
+        params![kind, key, fp, rev],
+    )?;
+    Ok(())
 }
 
 /// Submit one hive row: enqueue outbox, CAS, then clear on success. Never silent overwrite.
@@ -753,6 +793,7 @@ mod tests {
         assert!(HIVE_KINDS.contains(&KIND_SALES_PO));
         assert_eq!(tab_name(KIND_SALES_PO), "Sales_PO");
         assert_eq!(tab_name(KIND_VOUCHER), "Voucher register");
+        assert_eq!(tab_name(KIND_PURCHASE), "Purchase orders");
         assert_eq!(tab_name(KIND_PAYMENT), "Purchase payments");
         assert_eq!(sales_po_hive_key("PO-1", "CUST_01"), "PO-1@CUST_01");
     }

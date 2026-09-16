@@ -114,10 +114,9 @@ pub enum DefaultMergeTarget {
 }
 
 pub fn normalize_purchase_type(value: Option<&str>) -> PurchaseType {
-    if value.map(|s| s.trim()) == Some("non_po") {
-        PurchaseType::NonPo
-    } else {
-        PurchaseType::Po
+    match value.map(|s| s.trim()) {
+        Some("non_po") | Some("simple") | Some("Project Expenses") => PurchaseType::NonPo,
+        _ => PurchaseType::Po,
     }
 }
 

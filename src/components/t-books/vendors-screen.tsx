@@ -3,7 +3,7 @@ import { formatBankLabel, formatRupees } from "@/lib/t-books/business_rules";
 import { listVendors } from "@/lib/t-books/office";
 import { invokeErrorMessage } from "@/lib/t-books/platform";
 import type { VendorRef, VoucherListRow } from "@/lib/t-books/types";
-import { loadVoucher, loadVoucherList } from "@/lib/t-books/vouchers";
+import { loadVoucherList } from "@/lib/t-books/vouchers";
 import { ModuleFrame } from "./module-frame";
 import { TableCell, TableHeadCell, VirtualTable } from "./virtual-table";
 
@@ -35,32 +35,20 @@ export default function VendorsScreen({
         cur.push(row);
         byVendor.set(key, cur);
       }
-      const enriched: VendorRow[] = [];
-      for (const vendor of vendors) {
+      const enriched: VendorRow[] = vendors.map((vendor) => {
         const linked = byVendor.get(vendor.vendor.trim().toLowerCase()) ?? [];
-        let bankLine = "";
-        const sample = linked[0];
-        if (sample) {
-          try {
-            const full = await loadVoucher(sample.voucherNumber);
-            bankLine = formatBankLabel({
-              bank_name: full.bank,
-              account_no: full.accountNumber,
-              ifsc: full.ifsc,
-              holder_name: full.vendor,
-            });
-          } catch {
-            bankLine = "";
-          }
-        }
-        enriched.push({
+        return {
           ...vendor,
-          bankLine,
+          bankLine: formatBankLabel({
+            bank_name: vendor.bank,
+            account_no: vendor.accountNumber,
+            ifsc: vendor.ifsc,
+          }),
           vouchers: linked.length,
           billed: linked.reduce((sum, row) => sum + (row.totalValue || 0), 0),
           due: linked.reduce((sum, row) => sum + (row.remaining || 0), 0),
-        });
-      }
+        };
+      });
       setRows(enriched);
       setError(null);
     } catch (err) {
@@ -79,7 +67,7 @@ export default function VendorsScreen({
   return (
     <ModuleFrame
       title="Vendors"
-      hint="From this PC. Bank line is formatBankLabel from the latest linked voucher. Refresh does not delete names."
+      hint="From this PC. Bank line is formatBankLabel from listVendors (bank / accountNumber / ifsc). Refresh does not delete names."
       onBack={onBack}
       error={error}
     >

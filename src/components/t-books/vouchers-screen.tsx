@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { formatRupees } from "@/lib/t-books/business_rules";
+import { formatRupees, paymentOrdinal } from "@/lib/t-books/business_rules";
 import { SUBMIT_SUCCESS_TOAST } from "@/lib/t-books/constants";
 import { invokeErrorMessage } from "@/lib/t-books/platform";
 import { canRefresh } from "@/lib/t-books/rbac";
@@ -130,6 +130,7 @@ export default function VouchersScreen({
             empty={<p className="text-sm text-ink-muted">No payments on this voucher.</p>}
             header={
               <tr>
+                <TableHeadCell>Payment</TableHeadCell>
                 <TableHeadCell>PI</TableHeadCell>
                 <TableHeadCell className="text-right">Value</TableHeadCell>
                 <TableHeadCell className="text-right">Paid</TableHeadCell>
@@ -137,9 +138,28 @@ export default function VouchersScreen({
                 <TableHeadCell>Date</TableHeadCell>
               </tr>
             }
-            renderRow={(row) => (
+            renderRow={(row) => {
+              const occupied =
+                (row.paid ?? 0) !== 0 ||
+                (row.piValue ?? 0) !== 0 ||
+                Boolean(row.paymentDate) ||
+                Boolean(row.piNo);
+              const seq = occupied
+                ? open.payments.filter((p) => {
+                    const on =
+                      (p.paid ?? 0) !== 0 ||
+                      (p.piValue ?? 0) !== 0 ||
+                      Boolean(p.paymentDate) ||
+                      Boolean(p.piNo);
+                    return on && p.slot <= row.slot;
+                  }).length
+                : 0;
+              return (
               <tr className="table-row">
-                <TableCell>{row.piNo || `Block ${row.slot}`}</TableCell>
+                <TableCell className="font-medium">
+                  {occupied ? paymentOrdinal(seq) : `Block ${row.slot}`}
+                </TableCell>
+                <TableCell>{row.piNo || "—"}</TableCell>
                 <TableCell className="text-right tabular-nums">{formatRupees(row.piValue)}</TableCell>
                 <TableCell className="text-right tabular-nums">{formatRupees(row.paid)}</TableCell>
                 <TableCell className="text-right tabular-nums text-navy">
@@ -147,11 +167,13 @@ export default function VouchersScreen({
                 </TableCell>
                 <TableCell className="text-ink-muted">{row.paymentDate || "—"}</TableCell>
               </tr>
-            )}
+              );
+            }}
           />
         </div>
         <p className="mt-4 text-xs text-ink-subtle">
-          Payments stay on this voucher. Up to five blocks.
+          Payments stay on this voucher (up to five). Submit writes the bill to Voucher register and
+          each occupied payment as 1st / 2nd / … on Loopbooks — Payments. Not a second bill.
         </p>
         {submitState === "success" ? (
           <RefreshToast message={SUBMIT_SUCCESS_TOAST} onDone={() => setSubmitState("idle")} />
@@ -174,7 +196,7 @@ export default function VouchersScreen({
   return (
     <ModuleFrame
       title="Vouchers"
-      hint="Local register. Refresh pulls Voucher_Raw_Data. Submit writes one voucher back, and never overwrites another person’s changes."
+      hint="Refresh pulls the archive. Submit writes this voucher to Voucher register and its payment lines to Loopbooks — Payments."
       onBack={onBack}
       error={error}
     >

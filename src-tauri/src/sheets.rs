@@ -418,6 +418,7 @@ pub fn fetch_values_on(
     get_values(account, spreadsheet_id, &encode_range(tab), tab)
 }
 
+#[allow(dead_code)]
 pub fn fetch_sheet_values(account: &ServiceAccount, tab: &str) -> Result<Vec<Vec<String>>> {
     fetch_values_on(account, &account.spreadsheet_id, tab)
 }

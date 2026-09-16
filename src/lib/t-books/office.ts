@@ -4,8 +4,10 @@ import {
   calcPo,
   calcPoItem,
   calcSalarySlip,
+  canUnmergeVoucher,
   classifyPurchasePayment,
   keepPostedPayNumber,
+  mergeBlockedReason,
   nextPaymentNumber,
   nextPurchaseNumber,
   nextSalaryNumber,
@@ -16,6 +18,7 @@ import {
   rupeesToPaise,
   salaryPeriodTaken,
   taxInvoiceMissing,
+  vendorMergeKey,
 } from "./business_rules";
 import { all, exec, lastInsertId, withTransaction } from "./db";
 import { invokeCommand, isTauriRuntime } from "./platform";
@@ -26,6 +29,7 @@ import type {
   HrPerson,
   InventoryRow,
   LogisticsRow,
+  MergeReport,
   PayrollRow,
   PoItemIn,
   PoPreview,
@@ -966,9 +970,119 @@ function listProjectsLocal(): string[] {
 }
 
 function listVendorsLocal(): VendorRef[] {
-  return all<SqlRow>("SELECT vendor, gst FROM vendors ORDER BY vendor COLLATE NOCASE")
-    .map((row) => ({ vendor: text(row, "vendor"), gst: text(row, "gst") }))
+  return all<SqlRow>(
+    `SELECT vendor,
+            COALESCE(gst,'') AS gst,
+            COALESCE(bank,'') AS bank,
+            COALESCE(account_number,'') AS account_number,
+            COALESCE(ifsc,'') AS ifsc
+     FROM vendors ORDER BY vendor COLLATE NOCASE`,
+  )
+    .map((row) => ({
+      vendor: text(row, "vendor"),
+      gst: text(row, "gst"),
+      bank: text(row, "bank"),
+      accountNumber: text(row, "account_number"),
+      ifsc: text(row, "ifsc"),
+    }))
     .filter((row) => row.vendor);
+}
+
+function ensureVoucherLinkCols(): void {
+  try {
+    exec("ALTER TABLE vouchers ADD COLUMN linked_po TEXT");
+  } catch {
+    /* column may already exist */
+  }
+  try {
+    exec("ALTER TABLE vouchers ADD COLUMN linked_source TEXT");
+  } catch {
+    /* column may already exist */
+  }
+}
+
+function isPostedChildTarget(poNumber: string): boolean {
+  const po = trim(poNumber);
+  return po.includes(".") || /PUR-\d+-\d+/.test(po);
+}
+
+function loadMergeHint(voucherNumber: number): {
+  id: string;
+  vendor_key: string;
+  po_id: string | null;
+  source: string;
+  reversed: boolean;
+} {
+  const rows = all<SqlRow>(
+    `SELECT COALESCE(vendor,'') AS vendor,
+            COALESCE(linked_po,'') AS linked_po,
+            COALESCE(linked_source,'') AS linked_source,
+            COALESCE(source,'') AS source
+     FROM vouchers WHERE voucher_number = ?`,
+    [voucherNumber],
+  );
+  if (!rows[0]) throw new Error(`Voucher ${voucherNumber} is not on this PC.`);
+  const linkedPo = text(rows[0], "linked_po");
+  const linkedSource = text(rows[0], "linked_source");
+  const source = text(rows[0], "source");
+  return {
+    id: String(voucherNumber),
+    vendor_key: vendorMergeKey(text(rows[0], "vendor"), null),
+    po_id: linkedPo.trim() ? linkedPo : null,
+    source: linkedSource.trim() || source,
+    reversed: false,
+  };
+}
+
+function mergeOntoPurchaseLocal(poNumber: string, voucherNumbers: number[]): MergeReport {
+  ensureVoucherLinkCols();
+  const po = trim(poNumber);
+  if (!po) throw new Error("Choose a purchase to merge onto.");
+  if (isPostedChildTarget(po)) {
+    throw new Error("Posted child numbers like PUR-0001-01 are never rewritten.");
+  }
+  const numbers = voucherNumbers.filter((n) => Number.isFinite(n));
+  if (numbers.length === 0) throw new Error("Select at least one voucher.");
+  const bills = all<SqlRow>(
+    "SELECT COALESCE(vendor,'') AS vendor FROM purchase_po WHERE po_number = ? COLLATE NOCASE LIMIT 1",
+    [po],
+  );
+  if (!bills[0]) throw new Error("That purchase bill was not found on this PC.");
+  const targetKey = vendorMergeKey(text(bills[0], "vendor"), null);
+  const hints = numbers.map((n) => loadMergeHint(n));
+  const reason = mergeBlockedReason(hints, po, targetKey);
+  if (reason) throw new Error(reason);
+  const placeholders = numbers.map(() => "?").join(",");
+  withTransaction(() => {
+    exec(
+      `UPDATE vouchers SET linked_po = ?, is_dirty = 1, dirty = 1, updated_at = datetime('now')
+       WHERE voucher_number IN (${placeholders})`,
+      [po, ...numbers],
+    );
+  });
+  const linkedRows = all<SqlRow>(
+    `SELECT voucher_number FROM vouchers WHERE voucher_number IN (${placeholders})`,
+    numbers,
+  );
+  const linked = linkedRows.map((row) => num(row, "voucher_number"));
+  const found = new Set(linked);
+  const skipped = numbers.filter((n) => !found.has(n)).map((n) => `${n} not on this PC`);
+  return { poNumber: po, linked, skipped };
+}
+
+function unmergeVoucherLocal(voucherNumber: number): void {
+  ensureVoucherLinkCols();
+  const hint = loadMergeHint(voucherNumber);
+  if (!canUnmergeVoucher(hint.source)) {
+    throw new Error("Unmerge is only for linked import payments.");
+  }
+  withTransaction(() => {
+    exec(
+      `UPDATE vouchers SET linked_po = '', is_dirty = 1, dirty = 1, updated_at = datetime('now')
+       WHERE voucher_number = ?`,
+      [voucherNumber],
+    );
+  });
 }
 
 function searchOfficeLocal(query: string): SearchHit[] {
@@ -1143,6 +1257,18 @@ export async function listProjects(): Promise<string[]> {
 }
 export async function listVendors(): Promise<VendorRef[]> {
   return call("list_vendors", listVendorsLocal);
+}
+export async function mergeOntoPurchase(
+  poNumber: string,
+  voucherNumbers: number[],
+): Promise<MergeReport> {
+  return call("merge_onto_purchase", () => mergeOntoPurchaseLocal(poNumber, voucherNumbers), {
+    poNumber,
+    voucherNumbers,
+  });
+}
+export async function unmergeVoucher(voucherNumber: number): Promise<void> {
+  return call("unmerge_voucher", () => unmergeVoucherLocal(voucherNumber), { voucherNumber });
 }
 
 export function parseFinite(raw: string, field: string): number {

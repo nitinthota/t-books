@@ -51,7 +51,7 @@ export function tabName(kind: string): string {
     case KIND_VOUCHER:
       return "Voucher register";
     case KIND_PURCHASE:
-      return "Purchase";
+      return "Purchase orders";
     case KIND_PAYMENT:
       return "Purchase payments";
     case KIND_SALARY:
@@ -74,7 +74,7 @@ export function liveTabName(kind: string): string {
     case KIND_VOUCHER:
       return "Voucher register";
     case KIND_PURCHASE:
-      return "Purchase";
+      return "Purchase orders";
     case KIND_PAYMENT:
       return "Purchase payments";
     case KIND_SALARY:

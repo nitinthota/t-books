@@ -279,7 +279,7 @@ pub fn save_voucher(books: &mut LocalBooks, payload: VoucherSave) -> Result<Vouc
         )?;
     }
     tx.commit()?;
-    crate::vouchers::get_voucher(books, number)
+    get_voucher_full(books, number)
 }
 
 #[cfg(test)]

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { formatRupees, paymentMatchesFilters, type PaymentFilterKey } from "@/lib/t-books/business_rules";
+import { formatRupees, paymentAllocationLabel, paymentClassLabel, paymentMatchesFilters, paymentOrdinal, rupeesToPaise, shouldPostPurchaseBill, type PaymentFilterKey } from "@/lib/t-books/business_rules";
 import {
   deletePurchasePayment,
   deletePurchasePo,
@@ -44,6 +44,11 @@ const FILTERS: { key: PaymentFilterKey; label: string }[] = [
   { key: "fully_paid", label: "Fully Paid" },
   { key: "missing_tax", label: "Missing Tax Inv" },
 ];
+
+const TYPE_LABELS: Record<PurchaseType, string> = {
+  contract: "Techsol Purchase",
+  simple: "Project Expenses",
+};
 
 function blankDraft(): Draft {
   return {
@@ -96,6 +101,11 @@ export default function PurchaseScreen({
   const [filters, setFilters] = useState<PaymentFilterKey[]>([]);
   const [payAmount, setPayAmount] = useState("");
   const dirty = mode === "edit" && JSON.stringify(draft) !== JSON.stringify(saved);
+  const canSubmitBill = shouldPostPurchaseBill({
+    goodsReceived: draft.goodsReceived,
+    grandPaise: rupeesToPaise(Number(draft.totalValue) || 0),
+    converted: false,
+  });
 
   const reload = useCallback(async () => {
     try {
@@ -288,7 +298,10 @@ export default function PurchaseScreen({
     });
   }, [rows, payments, filters]);
 
-  const billPays = payments.filter((p) => p.poNumber.toLowerCase() === draft.poNumber.toLowerCase());
+  const billPays = payments
+    .filter((p) => p.poNumber.toLowerCase() === draft.poNumber.toLowerCase())
+    .slice()
+    .sort((a, b) => (a.id ?? 0) - (b.id ?? 0));
 
   if (mode === "edit") {
     return (
@@ -298,13 +311,18 @@ export default function PurchaseScreen({
         onBack={() => requestLeave(() => setMode("list"))}
         error={error}
         actions={
-          <div className="flex gap-2">
-            <Button variant="secondary" onClick={() => void onSaveStay()} disabled={busy}>
-              {busy ? "Saving…" : "Save"}
-            </Button>
-            <Button onClick={() => void onSubmitBill()} disabled={busy}>
-              Submit
-            </Button>
+          <div className="flex flex-col items-end gap-1">
+            <div className="flex gap-2">
+              <Button variant="secondary" onClick={() => void onSaveStay()} disabled={busy}>
+                {busy ? "Saving…" : "Save"}
+              </Button>
+              <Button onClick={() => void onSubmitBill()} disabled={busy || !canSubmitBill}>
+                Submit
+              </Button>
+            </div>
+            {!canSubmitBill ? (
+              <p className="text-xs text-ink-muted">Submit the bill after goods received and a total above zero.</p>
+            ) : null}
           </div>
         }
       >
@@ -316,12 +334,12 @@ export default function PurchaseScreen({
                 key={kind}
                 type="button"
                 className={cn(
-                  "pressable h-11 rounded-md px-4 text-sm capitalize",
+                  "pressable h-11 rounded-md px-4 text-sm",
                   draft.type === kind ? "bg-navy text-paper-raised" : "bg-paper-sunken text-ink-muted",
                 )}
                 onClick={() => setDraft({ ...draft, type: kind })}
               >
-                {kind}
+                {TYPE_LABELS[kind]}
               </button>
             ))}
           </div>
@@ -400,7 +418,7 @@ export default function PurchaseScreen({
           {draft.poNumber ? (
             <>
               <div className="ledger-rule my-5" />
-              <p className="text-xs font-medium uppercase tracking-wide text-ink-subtle">PAY payments</p>
+              <p className="text-xs font-medium uppercase tracking-wide text-ink-subtle">Payments on this bill</p>
               <div className="mt-3 flex flex-col gap-2 sm:flex-row">
                 <Input
                   inputMode="decimal"
@@ -413,10 +431,14 @@ export default function PurchaseScreen({
                 </Button>
               </div>
               <ul className="mt-3 space-y-2 text-sm">
-                {billPays.map((p) => (
+                {billPays.map((p, i) => (
                   <li key={p.id} className="flex items-center justify-between rounded-md bg-paper-sunken px-3 py-2">
-                    <span className="font-mono">
-                      {p.payNumber} · {formatRupees(p.amountRupees)} · {p.payClass}
+                    <span>
+                      <span className="font-medium">{paymentOrdinal(i + 1)}</span>
+                      <span className="ml-2 font-mono text-ink-muted">
+                        {p.payNumber} · {formatRupees(p.amountRupees)} · {paymentClassLabel(p.payClass)} ·{" "}
+                        {paymentAllocationLabel(p.allocMethod, p.poNumber)}
+                      </span>
                     </span>
                     <div className="flex gap-1">
                       <Button size="sm" variant="secondary" onClick={() => void onSubmitPay(p.payNumber)} disabled={busy}>
@@ -428,7 +450,7 @@ export default function PurchaseScreen({
                     </div>
                   </li>
                 ))}
-                {billPays.length === 0 ? <li className="text-ink-muted">No PAY rows on this bill yet.</li> : null}
+                {billPays.length === 0 ? <li className="text-ink-muted">No payments on this bill yet.</li> : null}
               </ul>
             </>
           ) : null}
@@ -440,7 +462,7 @@ export default function PurchaseScreen({
   return (
     <ModuleFrame
       title="Purchase"
-      hint="PUR bills and PAY bank payments on this PC. Refresh does not change these rows."
+      hint="PUR bills and PAY bank payments on this PC. Submit writes Loopbooks — Purchase orders. Refresh does not change these rows."
       onBack={() => requestLeave(onBack)}
       error={error}
       actions={<Button onClick={openNew}>New bill</Button>}

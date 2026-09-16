@@ -27,7 +27,7 @@ import {
   salaryVoucherLines,
 } from "./hr-payroll.ts";
 import { allocateVoucherSerial, nextPaymentNumber, nextPurchaseNumber, nextSalaryNumber } from "./alloc.ts";
-import { classifyPurchasePayment, isLegacyPayNumber } from "./purchase-status.ts";
+import { classifyPurchasePayment, isLegacyPayNumber, paymentOrdinal } from "./purchase-status.ts";
 import { MemoryHive, hiveConflictMessage } from "../hive.ts";
 import { canMutate } from "./rbac.ts";
 
@@ -225,6 +225,15 @@ test("PUR/PAY allocate from hive list; dummy rows never allocate", () => {
     thisPaise: 10_000,
   });
   assert.equal(payClass, "advance");
+});
+
+test("1st payment is the ordinal on that bill, not the PAY serial", () => {
+  assert.equal(paymentOrdinal(1), "1st payment");
+  assert.equal(paymentOrdinal(2), "2nd payment");
+  assert.equal(paymentOrdinal(3), "3rd payment");
+  assert.equal(paymentOrdinal(10), "10th payment");
+  assert.equal(paymentOrdinal(11), "11th payment");
+  assert.equal(paymentOrdinal(21), "21st payment");
 });
 
 test("viewer cannot mutate", () => {
