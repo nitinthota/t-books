@@ -68,7 +68,7 @@ fn get_voucher(
     voucher_number: i64,
 ) -> std::result::Result<crate::vouchers::VoucherView, String> {
     let books = state.books.lock().expect("local books");
-    crate::vouchers::get_voucher(&books, voucher_number).map_err(|e| e.to_string())
+    crate::voucher_edit::get_voucher_full(&books, voucher_number).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
