@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 jobs:
   check:
@@ -68,4 +69,3 @@ jobs:
           name: T-Books-Setup
           path: dist/installers/T-Books-Setup.exe
           if-no-files-found: error
-
