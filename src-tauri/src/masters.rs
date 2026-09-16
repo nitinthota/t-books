@@ -29,6 +29,12 @@ pub struct MergeReport {
     pub skipped: Vec<String>,
 }
 
+fn ensure_link_cols(books: &LocalBooks) {
+    let conn = books.conn();
+    let _ = conn.execute("ALTER TABLE vouchers ADD COLUMN linked_po TEXT", []);
+    let _ = conn.execute("ALTER TABLE vouchers ADD COLUMN linked_source TEXT", []);
+}
+
 pub fn list_vendors(books: &LocalBooks) -> Result<Vec<VendorRow>> {
     let mut stmt = books.conn().prepare(
         "SELECT vendor,
@@ -58,6 +64,7 @@ pub fn list_vendors(books: &LocalBooks) -> Result<Vec<VendorRow>> {
 }
 
 fn load_hint(books: &LocalBooks, voucher_number: i64) -> Result<MergeVoucherHint> {
+    ensure_link_cols(books);
     let row = books.conn().query_row(
         "SELECT COALESCE(vendor,''), COALESCE(linked_po,''), COALESCE(linked_source,''), COALESCE(source,'')
          FROM vouchers WHERE voucher_number = ?1",
@@ -81,7 +88,7 @@ fn load_hint(books: &LocalBooks, voucher_number: i64) -> Result<MergeVoucherHint
     };
     Ok(MergeVoucherHint {
         id: voucher_number.to_string(),
-        vendor_key: vendor_merge_key(Some(&vendor), None),
+        vendor_key: vendor_merge_key(Some(vendor.as_str()), None),
         po_id: if linked_po.trim().is_empty() {
             None
         } else {
@@ -97,6 +104,7 @@ pub fn merge_onto_purchase(
     po_number: &str,
     voucher_numbers: &[i64],
 ) -> Result<MergeReport> {
+    ensure_link_cols(books);
     let po = po_number.trim();
     if po.is_empty() {
         return Err(BooksError::from("Choose a purchase to merge onto."));
@@ -114,12 +122,12 @@ pub fn merge_onto_purchase(
             |row| row.get(0),
         )
         .map_err(|_| BooksError::from("That purchase bill was not found on this PC."))?;
-    let target_key = vendor_merge_key(Some(&bill), None);
+    let target_key = vendor_merge_key(Some(bill.as_str()), None);
     let mut hints = Vec::new();
     for n in voucher_numbers {
         hints.push(load_hint(books, *n)?);
     }
-    if let Some(reason) = merge_blocked_reason(&hints, Some(po), Some(&target_key)) {
+    if let Some(reason) = merge_blocked_reason(&hints, Some(po), Some(target_key.as_str())) {
         return Err(BooksError::from(reason));
     }
     let tx = books.conn_mut().transaction()?;
@@ -151,6 +159,7 @@ pub fn merge_onto_purchase(
 }
 
 pub fn unmerge_voucher(books: &mut LocalBooks, voucher_number: i64) -> Result<()> {
+    ensure_link_cols(books);
     let hint = load_hint(books, voucher_number)?;
     if !can_unmerge_voucher(hint.source.as_deref()) {
         return Err(BooksError::from(
@@ -180,6 +189,7 @@ mod tests {
     use crate::db::open_memory;
 
     fn seed(books: &mut LocalBooks) {
+        ensure_link_cols(books);
         books
             .conn()
             .execute(
