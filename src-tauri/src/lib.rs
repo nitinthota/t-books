@@ -92,7 +92,7 @@ pub const OFFLINE_BANNER: &str =
     "Offline — working on this PC. Access list and Refresh paused.";
 pub const CREDENTIALS_BANNER: &str = "Google credentials not found. Running offline.";
 pub const MIN_PASSWORD_LENGTH: usize = 8;
-pub const SCHEMA_VERSION: &str = "11";
+pub const SCHEMA_VERSION: &str = "10";
 pub const LOOPBOOK_LOGIC_VERSION: &str = business_rules::LOOPBOOK_LOGIC_VERSION;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
