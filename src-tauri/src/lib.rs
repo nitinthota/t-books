@@ -6,6 +6,7 @@ mod db;
 mod hive;
 mod hive_plan;
 mod log;
+mod masters;
 mod migrate;
 mod office;
 mod office_sync;
@@ -42,6 +43,7 @@ pub use log::{
     apply_debug_flag, clear_logs, error_log_path, event as log_event, is_debug,
     performance as log_performance, set_log_dir, Level as LogLevel,
 };
+pub use masters::{merge_onto_purchase, unmerge_voucher, MergeReport, VendorRow};
 pub use ops::{
     auto_backup, backup_to, check_updates, download_installer, export_logs_zip, is_newer, ops_info,
     parse_latest_release, prune_auto_backups, restore_from, set_auto_backup, store_app_version,
@@ -90,7 +92,7 @@ pub const OFFLINE_BANNER: &str =
     "Offline — working on this PC. Access list and Refresh paused.";
 pub const CREDENTIALS_BANNER: &str = "Google credentials not found. Running offline.";
 pub const MIN_PASSWORD_LENGTH: usize = 8;
-pub const SCHEMA_VERSION: &str = "10";
+pub const SCHEMA_VERSION: &str = "11";
 pub const LOOPBOOK_LOGIC_VERSION: &str = business_rules::LOOPBOOK_LOGIC_VERSION;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
