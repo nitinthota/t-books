@@ -1,4 +1,6 @@
 @import "tailwindcss";
+@source "./**/*.{ts,tsx}";
+@source "../tauri-web/**/*.{html,tsx}";
 
 @theme {
   --color-paper: #f6f1e8;
