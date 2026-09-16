@@ -16,8 +16,10 @@ import {
   submitOffice,
 } from "@/lib/t-books/office";
 import { invokeErrorMessage } from "@/lib/t-books/platform";
-import type { PurchasePayment, PurchasePo, PurchaseType } from "@/lib/t-books/types";
+import type { PurchasePayment, PurchasePo, PurchaseType, VoucherListRow } from "@/lib/t-books/types";
+import { loadVoucherList } from "@/lib/t-books/vouchers";
 import { cn } from "@/lib/utils";
+import { MergePane } from "./merge-pane";
 import { ModuleFrame, SuggestField } from "./module-frame";
 import { draftsFromItems, emptyItem, parseItemDrafts, PoItemsEditor, type ItemDraft } from "./po-items-editor";
 import { TableCell, TableHeadCell, VirtualTable } from "./virtual-table";
@@ -83,6 +85,7 @@ export default function PurchaseScreen({
   const { requestLeave } = useUnsaved();
   const [rows, setRows] = useState<PurchasePo[] | null>(null);
   const [payments, setPayments] = useState<PurchasePayment[]>([]);
+  const [vouchers, setVouchers] = useState<VoucherListRow[]>([]);
   const [projects, setProjects] = useState<string[]>([]);
   const [vendors, setVendors] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -96,16 +99,18 @@ export default function PurchaseScreen({
 
   const reload = useCallback(async () => {
     try {
-      const [list, pays, projectNames, vendorRows] = await Promise.all([
+      const [list, pays, projectNames, vendorRows, voucherRows] = await Promise.all([
         listPurchasePo(),
         listPurchasePayments(),
         listProjects(),
         listVendors(),
+        loadVoucherList(),
       ]);
       setRows(list);
       setPayments(pays);
       setProjects(projectNames);
       setVendors(vendorRows.map((v) => v.vendor));
+      setVouchers(voucherRows);
       setError(null);
     } catch (err) {
       setError(invokeErrorMessage(err));
@@ -498,6 +503,7 @@ export default function PurchaseScreen({
           )}
         />
       </div>
+      <MergePane bills={rows ?? []} vouchers={vouchers} />
     </ModuleFrame>
   );
 }
