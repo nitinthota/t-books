@@ -77,7 +77,18 @@ function BoardShellInner() {
             ) : active === "vendors" ? (
               <VendorsScreen onBack={() => go("board")} focusId={focusId} />
             ) : active === "projects" ? (
-              <ProjectsScreen onBack={() => go("board")} focusId={focusId} />
+              <ProjectsScreen
+                onBack={() => go("board")}
+                focusId={focusId}
+                onOpen={(nav, key) =>
+                  go(nav, {
+                    kind: nav === "vendors" ? "vendor" : "project",
+                    id: key,
+                    title: key,
+                    subtitle: "",
+                  })
+                }
+              />
             ) : active === "sales" ? (
               <SalesScreen onBack={() => go("board")} focusId={focusId} />
             ) : active === "purchase" ? (
@@ -136,17 +147,14 @@ const BoardBody = memo(function BoardBody({ onOpenVouchers }: { onOpenVouchers: 
   return (
     <div className="mt-8">
       {lastError ? (
-        <p className="mb-4 text-sm text-gold">Refresh failed. Previous figures on this PC are kept.</p>
+        <p className="mb-4 text-sm text-gold">Refresh failed. Previous figures are kept.</p>
       ) : null}
       {count === 0 && !lastError ? (
-        <p className="text-sm text-ink-muted">
-          No vouchers on this PC yet. Refresh pulls the register. Sales, purchase, HR, inventory,
-          logistics, and documents stay here.
-        </p>
+        <p className="text-sm text-ink-muted">No vouchers yet. Refresh loads the register.</p>
       ) : (
         <>
           <p className="text-xs text-ink-subtle">
-            {summary?.lastSynced ? `Last refreshed ${summary.lastSynced}` : "Never refreshed on this PC."}
+            {summary?.lastSynced ? `Last refreshed ${summary.lastSynced}` : "Not refreshed yet."}
           </p>
           <button
             type="button"
@@ -163,8 +171,8 @@ const BoardBody = memo(function BoardBody({ onOpenVouchers }: { onOpenVouchers: 
       )}
       {keys.length > 0 ? (
         <div className="mt-6 rounded-lg bg-paper-raised p-4 ring-1 ring-line">
-          <p className="text-xs font-medium uppercase tracking-wide text-ink-subtle">Outbox</p>
-          <ul className="mt-2 max-h-40 overflow-auto font-mono text-sm">
+          <p className="text-xs font-medium uppercase tracking-wide text-ink-subtle">Not posted</p>
+          <ul className="mt-2 max-h-40 overflow-auto text-sm">
             {keys.map((k) => (
               <li key={`${k.kind}-${k.key}`} className="py-1">
                 {k.kind} {k.key}
