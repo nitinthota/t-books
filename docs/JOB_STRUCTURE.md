@@ -1,4 +1,4 @@
-# T Books job structure
+# T Books structure
 
 A clerk and a later builder should read the same page.
 
@@ -6,46 +6,83 @@ A clerk and a later builder should read the same page.
 
 A **project** is only a job name.
 A **vendor** is only a party name.
-A **sales order** is a customer document that points at a job.
+A **sales order** and a **purchase bill** are documents that point at a job.
+A **voucher** is a supplier bill that points at a job and a vendor.
 
-Documents are not stored inside those names. They point at them. The card adds them up.
+Names do not contain documents. Documents point at names. A card adds them up.
 
 ```
- Project (job) <---- Voucher, Purchase, Sales
- Vendor (party) <---- Voucher, Purchase
- Sales order ----> Project, Client
+ Board (company home)
+    |
+    +-- Job card <---- Voucher, Purchase, Sales
+    +-- Vendor card <---- Voucher, Purchase
+    +-- Sales order card ----> Job + line items
+    +-- Purchase bill card ----> Job + line items + PAY
 ```
 
-## Open a card, then a count
+## Board
 
-| Card | Click | Opens |
+Six tiles. Each tile opens that register.
+
+- Vouchers — count and still to pay
+- Purchase bills — count and unpaid
+- Sales orders — count and balance
+- Jobs — billed / paid / due by job
+- Vendors — party card
+- Not posted — parked documents waiting to Submit
+
+Looking at Board does not post.
+
+## Open a card
+
+| From | Click | Opens |
 |---|---|---|
-| Job | Vouchers / Purchase / Sales | That job only |
-| Job | vendor name | That vendor card |
-| Vendor | Vouchers / Purchase | That vendor only |
-| Vendor | job name | That job card |
-| Sales order | Project | That job card |
-| Voucher / Purchase row | Project | That job card |
+| Board | a tile | That register |
+| Jobs list | job name | Job card |
+| Job card | Vouchers / Purchase / Sales count | That job only |
+| Job card | vendor name | Vendor card |
+| Vendors list | party name | Vendor card |
+| Vendor card | Vouchers / Purchase count | That vendor only |
+| Vendor card | job name | Job card |
+| Sales list | order | Sales card with lines |
+| Sales card | job name | Job card |
+| Purchase list | bill | Purchase card with lines and PAY |
+| Purchase card | job name | Job card |
+
+## Lines on Sales and Purchase
+
+The card loads the full document, not the list row.
+
+- Item, description, qty, rate, GST %, amount
+- Add row
+- Delete row
+- Save lines parks the document here
+- Full edit is client / vendor / tax / Submit
+
+A list row has no lines until the card opens.
 
 ## Example
 
-**Star Engineering** vendor card
+Job **Plant 2 – Hydraulics**
 
-- Vouchers 6
-- Purchase bills 2 (PUR-0004, PUR-0007)
-- Jobs: Plant 2 – Hydraulics, Site A
+- Vouchers 4 → 5, 12, 40, 166 only
+- Purchase 2 → PUR-0004, PUR-0007 only
+- Sales 1 → SAL-0001 only
 
-Click Vouchers 6 → only Star Engineering bills.
-Click Plant 2 – Hydraulics → job card.
+PUR-0004 card shows hose lines and PAY-00010.
+SAL-0001 card shows customer lines. Click the job name to return.
 
-**SAL-0001** sales card
+Star Engineering vendor card lists the jobs that party billed.
 
-- Project Plant 2 – Hydraulics (click → job)
-- Client, value, received, balance, line count
-- Edit when you need to change lines
+## Park and post
+
+- Save / Save lines — parks here
+- Submit — posts one document to the company file
+- Refresh — brings the company file. Parked numbers are named first
+- Posted PUR-n / PAY-n are not rewritten
 
 ## Never true
 
-- Project is not a folder of documents.
-- Vendor is not owned by one job.
-- Looking at a card does not post. Only Submit posts.
+- A job is not a folder of files
+- A vendor does not belong to one job
+- Opening a card does not call the company file
