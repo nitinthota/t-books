@@ -34,7 +34,7 @@ export default function TrialScreen({ onBack }: { onBack: () => void }) {
   return (
     <ModuleFrame
       title="Finance"
-      hint="Trial balance from posted books on this PC. Indian financial year 1 Apr–31 Mar. Debits must equal credits."
+      hint="Year starts 1 April. Debit must equal credit."
       onBack={onBack}
       error={error}
     >
@@ -67,7 +67,7 @@ export default function TrialScreen({ onBack }: { onBack: () => void }) {
         <VirtualTable
           rows={trial?.lines ?? []}
           rowKey={(row) => row.account}
-          empty={<p className="text-sm text-ink-muted">No local books in this year yet.</p>}
+          empty={<p className="text-sm text-ink-muted">Nothing posted in this year.</p>}
           header={
             <tr>
               <TableHeadCell>Account</TableHeadCell>
