@@ -8,11 +8,11 @@ import {
 import { parseVoucherNumber } from "../../src/lib/t-books/business_rules/payment.ts";
 
 test("offline banner text is exact", () => {
-  assert.equal(OFFLINE_BANNER, "Offline — working on this PC. Access list and Refresh paused.");
+  assert.equal(OFFLINE_BANNER, "You are offline. Access and Refresh wait until you are online.");
 });
 
 test("credentials banner text is exact", () => {
-  assert.equal(CREDENTIALS_BANNER, "Google credentials not found. Running offline.");
+  assert.equal(CREDENTIALS_BANNER, "Company file is not connected. You can still work here.");
 });
 
 test("hardcoded owner email is fixed", () => {

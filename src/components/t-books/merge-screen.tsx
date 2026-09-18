@@ -29,7 +29,7 @@ export default function MergeScreen({ onBack }: { onBack: () => void }) {
   return (
     <ModuleFrame
       title="Merge"
-      hint="Link vouchers onto a PUR bill on this PC. Same vendor only. Posted PUR-n / PUR-n-01 / PAY-n are never rewritten. Same class of Control tool as Duplicates."
+      hint="Attach vouchers to a purchase bill. Same vendor. Posted bills are not changed."
       onBack={onBack}
       error={error}
     >
