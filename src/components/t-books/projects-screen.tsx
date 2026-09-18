@@ -28,6 +28,7 @@ export default function ProjectsScreen({
   const [purchases, setPurchases] = useState<PurchasePo[]>([]);
   const [sales, setSales] = useState<SalesPo[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
 
   const reload = useCallback(async () => {
     try {
@@ -81,21 +82,33 @@ export default function ProjectsScreen({
   }, [names, vouchers, purchases, sales]);
 
   const focused = focusId?.trim() ?? "";
+  const visible = useMemo(() => {
+    const q = (query.trim() || focused).toLowerCase();
+    if (!q) return rows;
+    return rows.filter((row) => row.project.toLowerCase().includes(q));
+  }, [rows, query, focused]);
 
   return (
     <ModuleFrame
       title="Projects"
-      hint="Rollup from this PC: voucher billed / paid / due plus customer PO. Refresh does not invent jobs."
+      hint="Billed, paid and still due by job."
       onBack={onBack}
       error={error}
     >
+      <input
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Job name"
+        aria-label="Search jobs"
+        className="mb-4 h-11 w-full max-w-md rounded-md bg-paper-raised px-3 text-sm ring-1 ring-line"
+      />
       <div className="overflow-hidden rounded-lg bg-paper-raised ring-1 ring-line">
         <VirtualTable
-          rows={rows}
+          rows={visible}
           rowKey={(row) => row.project}
           empty={
             <p className="text-sm text-ink-muted">
-              {names === null ? "Opening projects on this PC…" : "No projects on this PC yet."}
+              {names === null ? "Opening jobs…" : query.trim() ? "No job matches." : "No jobs yet."}
             </p>
           }
           header={
