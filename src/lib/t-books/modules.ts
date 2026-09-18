@@ -13,6 +13,7 @@ export const LOOPBOOK_NAV = [
   { id: "hr", label: "HR" },
   { id: "documents", label: "Documents", section: "Control" },
   { id: "duplicates", label: "Duplicates" },
+  { id: "merge", label: "Merge" },
   { id: "explorer", label: "Explorer" },
   { id: "rules", label: "Rules" },
   { id: "access", label: "Access" },
