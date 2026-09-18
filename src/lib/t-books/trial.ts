@@ -29,9 +29,19 @@ function num(row: SqlRow, key: string): number {
   return 0;
 }
 
+/** Book dates may be 2025-04-12 or 12.04.2025. Year compare uses 2025-04-12. */
+export function bookDateToIso(raw: string): string {
+  const s = raw.trim();
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  const dmy = s.match(/^(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{4})/);
+  if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, "0")}-${dmy[1].padStart(2, "0")}`;
+  return "";
+}
+
 function inRange(date: string, start: string, end: string): boolean {
-  const d = date.length >= 10 ? date.slice(0, 10) : date;
-  if (d.length < 10) return true;
+  const d = bookDateToIso(date);
+  if (!d) return false;
   return d >= start && d <= end;
 }
 
@@ -123,10 +133,17 @@ export function getTrialLocal(fy?: string | null, asOf?: string | null): TrialBa
 }
 
 export function listFyLocal(): string[] {
-  const dates = all<SqlRow>("SELECT COALESCE(voucher_date,'') AS d FROM vouchers")
-    .map((r) => text(r, "d"))
-    .filter((d) => d.length >= 10)
-    .map((d) => d.slice(0, 10));
+  const dates: string[] = [];
+  for (const sql of [
+    "SELECT COALESCE(voucher_date,'') AS d FROM vouchers",
+    "SELECT COALESCE(created_at,'') AS d FROM purchase_po",
+    "SELECT COALESCE(created_at,'') AS d FROM sales_po",
+  ]) {
+    for (const row of all<SqlRow>(sql)) {
+      const iso = bookDateToIso(text(row, "d"));
+      if (iso) dates.push(iso);
+    }
+  }
   let min: string | undefined;
   let max: string | undefined;
   for (const d of dates) {
