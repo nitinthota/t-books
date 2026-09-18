@@ -6,6 +6,14 @@ import type { TrialBalance } from "@/lib/t-books/types";
 import { ModuleFrame } from "./module-frame";
 import { TableCell, TableHeadCell, VirtualTable } from "./virtual-table";
 
+function dayLabel(iso: string): string {
+  if (!iso || iso.length < 10) return iso;
+  const [y, m, d] = iso.slice(0, 10).split("-");
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const mi = Number(m) - 1;
+  return `${Number(d)} ${months[mi] ?? m} ${y}`;
+}
+
 export default function TrialScreen({ onBack }: { onBack: () => void }) {
   const [fy, setFy] = useState("");
   const [options, setOptions] = useState<string[]>([]);
@@ -34,13 +42,13 @@ export default function TrialScreen({ onBack }: { onBack: () => void }) {
   return (
     <ModuleFrame
       title="Finance"
-      hint="Year starts 1 April. Debit must equal credit."
+      hint="Year starts 1 April. Pick a year. Only that year is added."
       onBack={onBack}
       error={error}
     >
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <label className="text-sm text-ink-muted">
-          FY
+          Year
           <select
             className="ml-2 h-11 rounded-md bg-paper-sunken px-3 text-ink"
             value={fy || trial?.fy || ""}
@@ -48,6 +56,7 @@ export default function TrialScreen({ onBack }: { onBack: () => void }) {
               setFy(e.target.value);
               void load(e.target.value);
             }}
+            aria-label="Financial year"
           >
             {(options.length ? options : trial ? [trial.fy] : []).map((y) => (
               <option key={y} value={y}>
@@ -58,8 +67,11 @@ export default function TrialScreen({ onBack }: { onBack: () => void }) {
         </label>
         {trial ? (
           <p className={trial.balanced ? "text-sm text-ink-muted" : "text-sm text-gold"}>
-            {trial.balanced ? "Balanced" : "Does not balance"} · {formatRupees(trial.totalDebitRupees)} Dr /{" "}
-            {formatRupees(trial.totalCreditRupees)} Cr
+            {dayLabel(trial.start)} – {dayLabel(trial.end)}
+            {" · "}
+            {trial.balanced ? "Balanced" : "Does not balance"}
+            {" · "}
+            {formatRupees(trial.totalDebitRupees)} Dr / {formatRupees(trial.totalCreditRupees)} Cr
           </p>
         ) : null}
       </div>
