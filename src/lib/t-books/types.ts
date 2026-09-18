@@ -390,6 +390,7 @@ export type NavId =
   | "hr"
   | "documents"
   | "duplicates"
+  | "merge"
   | "explorer"
   | "rules"
   | "access"
