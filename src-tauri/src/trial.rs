@@ -2,6 +2,7 @@
 
 use rusqlite::params;
 
+use crate::book_date::book_date_to_iso;
 use crate::core::business_rules::{
     clamp_as_of, current_indian_fy, fy_bounds, fy_options, rupees_to_paise, signed_dr_cr,
     trial_balanced,
@@ -31,11 +32,10 @@ pub struct TrialBalance {
 }
 
 fn in_range(date: &str, start: &str, end: &str) -> bool {
-    let d = if date.len() >= 10 { &date[..10] } else { date };
-    if d.len() < 10 {
-        return true;
+    match book_date_to_iso(date) {
+        Some(d) => d.as_str() >= start && d.as_str() <= end,
+        None => false,
     }
-    d >= start && d <= end
 }
 
 fn month_in_range(month: &str, start: &str, end: &str) -> bool {
@@ -194,10 +194,9 @@ pub fn available_fy(books: &LocalBooks) -> Result<Vec<String>> {
     let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
     for row in rows {
         let d = row?;
-        if d.len() < 10 {
+        let Some(s) = book_date_to_iso(&d) else {
             continue;
-        }
-        let s = d[..10].to_string();
+        };
         min = Some(match min.take() {
             Some(cur) if cur <= s => cur,
             _ => s.clone(),
@@ -234,5 +233,15 @@ mod tests {
         let trial = build_trial(&books, Some("2026-27"), None).unwrap();
         assert!(trial.balanced, "{trial:?}");
         assert!(!trial.lines.is_empty());
+    }
+
+    #[test]
+    fn book_date_12_apr_is_2025_26() {
+        assert_eq!(
+            book_date_to_iso("12.04.2025").as_deref(),
+            Some("2025-04-12")
+        );
+        assert!(in_range("12.04.2025", "2025-04-01", "2026-03-31"));
+        assert!(!in_range("12.04.2025", "2024-04-01", "2025-03-31"));
     }
 }
