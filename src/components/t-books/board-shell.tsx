@@ -73,13 +73,20 @@ function BoardShellInner() {
         ) : (
           <Suspense fallback={<ScreenSkeleton />}>
             {active === "vouchers" ? (
-              <VouchersScreen
+              <VouchersScreen onBack={() => go("board")} focusId={focusId} />
+            ) : active === "vendors" ? (
+              <VendorsScreen
                 onBack={() => go("board")}
                 focusId={focusId}
-                onOpenProject={(project) => go("projects", { kind: "project", id: project, title: project, subtitle: "" })}
+                onOpen={(nav, key) =>
+                  go(nav, {
+                    kind: nav === "vendors" ? "vendor" : "project",
+                    id: key,
+                    title: key,
+                    subtitle: "",
+                  })
+                }
               />
-            ) : active === "vendors" ? (
-              <VendorsScreen onBack={() => go("board")} focusId={focusId} />
             ) : active === "projects" ? (
               <ProjectsScreen
                 onBack={() => go("board")}
@@ -94,17 +101,9 @@ function BoardShellInner() {
                 }
               />
             ) : active === "sales" ? (
-              <SalesScreen
-                onBack={() => go("board")}
-                focusId={focusId}
-                onOpenProject={(project) => go("projects", { kind: "project", id: project, title: project, subtitle: "" })}
-              />
+              <SalesScreen onBack={() => go("board")} focusId={focusId} />
             ) : active === "purchase" ? (
-              <PurchaseScreen
-                onBack={() => go("board")}
-                focusId={focusId}
-                onOpenProject={(project) => go("projects", { kind: "project", id: project, title: project, subtitle: "" })}
-              />
+              <PurchaseScreen onBack={() => go("board")} focusId={focusId} />
             ) : active === "hr" ? (
               <HrScreen onBack={() => go("board")} />
             ) : active === "finance" ? (
