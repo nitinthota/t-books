@@ -19,6 +19,7 @@ Names do not contain documents. Documents point at names. A card adds them up.
     +-- Sales order card ----> Job + line items
     +-- Purchase bill card ----> Job + line items + PAY
     +-- Finance year ----> trial of that year only
+    +-- Duplicates ----> similar names, you pick the name to keep
 ```
 
 ## Board
@@ -71,6 +72,14 @@ A voucher dated 31.03.2025 belongs to 2024-25.
 
 Pick a year on Finance. Only that year is added. Debit must equal credit.
 
+## Duplicates
+
+Star Engineering and Star Engg. are the same party until you say so.
+Plant 2 Hydraulics and Plant-2 Hydraulics are the same job until you say so.
+
+You pick the name to keep. The other spelling is folded into it.
+Two bills with the same voucher number are listed only. They are never merged.
+
 ## Example
 
 Job **Plant 2 – Hydraulics**
@@ -91,9 +100,18 @@ Star Engineering vendor card lists the jobs that party billed.
 - Refresh — brings the company file. Parked numbers are named first
 - Posted PUR-n / PAY-n are not rewritten
 
+## Do not overwrite
+
+These files keep the full edit screens. A card sits in front. It does not replace them.
+
+- purchase-screen.tsx — tax invoice, goods received, Submit
+- sales-screen.tsx — client, terms, Submit
+- vouchers-screen.tsx — payments, Submit
+
 ## Never true
 
 - A job is not a folder of files
 - A vendor does not belong to one job
 - Opening a card does not call the company file
 - Changing the year does not post
+- Duplicate voucher numbers are not merged
