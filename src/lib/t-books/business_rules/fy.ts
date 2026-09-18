@@ -1,5 +1,28 @@
 /** Indian financial year: 1 Apr–31 Mar. Dummy dates only in tests. */
 
+/** Accepts `2024-04-05`, `05.04.2024`, `05/04/2024`, `05-04-2024`. */
+export function parseBookDate(raw: string | null | undefined): string | null {
+  const d = (raw ?? "").trim();
+  if (!d) return null;
+  const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(d);
+  if (iso) {
+    const y = Number(iso[1]);
+    const m = Number(iso[2]);
+    const day = Number(iso[3]);
+    if (y >= 1990 && y <= 2100 && m >= 1 && m <= 12 && day >= 1 && day <= 31) {
+      return `${iso[1]}-${iso[2]}-${iso[3]}`;
+    }
+    return null;
+  }
+  const dotted = /^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/.exec(d);
+  if (!dotted) return null;
+  const day = Number(dotted[1]);
+  const m = Number(dotted[2]);
+  const y = Number(dotted[3]);
+  if (y < 1990 || y > 2100 || m < 1 || m > 12 || day < 1 || day > 31) return null;
+  return `${y}-${String(m).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
 export function currentIndianFy(today = new Date()): string {
   const y = today.getUTCFullYear();
   const m = today.getUTCMonth();
@@ -24,8 +47,9 @@ export function fyRange(fy: string): { start: string; end: string } {
 export function fyOptions(minDate: string | null, maxDate: string | null, today = new Date()): string[] {
   const years = new Set<number>();
   const pushDate = (iso: string | null) => {
-    if (!iso) return;
-    const d = new Date(`${iso.slice(0, 10)}T00:00:00Z`);
+    const norm = parseBookDate(iso);
+    if (!norm) return;
+    const d = new Date(`${norm}T00:00:00Z`);
     if (Number.isNaN(d.getTime())) return;
     years.add(d.getUTCMonth() >= 3 ? d.getUTCFullYear() : d.getUTCFullYear() - 1);
   };
