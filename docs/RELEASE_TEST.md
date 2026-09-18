@@ -37,6 +37,7 @@ Optional live READ/WRITE: set `TBOOKS_GOOGLE_SA_JSON` or drop a service-account 
 | HR | Person, payroll Save, Submit salary | Save = L. Submit = G | Active person needs salary. One salary / person / month. `SAL-0001`. | office.rs, hr_payroll.rs |
 | Documents | Save path, open, Submit | Save = L. Submit = G | Name or path required. Open missing file is a real error (no wipe). | release_matrix |
 | Duplicates | List, merge | L | Lookalike vendors merge selected name. | control.rs |
+| Merge | Link vouchers onto a PUR bill | L | Same vendor only. Posted PUR-n / PAY-n never rewritten. | merge-pane, office merge |
 | Explorer | Open table | L | Unknown table error. No password/token columns. | control.rs |
 | Rules | List, toggle | L | Seeded rules; toggle persist. | control.rs |
 | Access | Refresh, write row (owner) | G | Empty sheet is a real error. Viewer cannot open. Owner write needs creds/online. Passwords never in cells. | access.rs, hive_plan credentials headers |
@@ -47,7 +48,7 @@ Optional live READ/WRITE: set `TBOOKS_GOOGLE_SA_JSON` or drop a service-account 
 | Button / command | Google? | Pass | Fail |
 |---|---|---|---|
 | Inspect / Login | Access prefetch if online | Session role matches Access | Denied message is real |
-| Set password | Same prefetch | Hash stored locally, never sheet | Length &lt; 8, mismatch, email-as-password |
+| Set password | Same prefetch | Hash stored locally, never sheet | Length < 8, mismatch, email-as-password |
 | Refresh Access | G | Cache replaced | Offline / no creds → keep cache, show error |
 | Refresh vouchers | G (raw READ) | Import register; skip dummy/dotted/blank vendor | Dirty guard lists numbers; no silent overwrite |
 | Force refresh | G (raw READ) | Discards dirty, replaces register | Network error keeps local |
@@ -60,8 +61,9 @@ Optional live READ/WRITE: set `TBOOKS_GOOGLE_SA_JSON` or drop a service-account 
 | Migrate dry-run | G **READ** raw | Plan counts; dummy skipped | No creds → error; never writes raw |
 | Backup / Restore | L | Round-trip vouchers | Corrupt zip keeps books |
 | Search | L | Hits vendor/project/inventory/logistics | Empty query ok |
+| Merge onto bill | L | Linked vouchers stay local until Submit | Wrong vendor / posted child blocked |
 | PO save uniqueness | L | Second same number errors | — |
-| HR salary constraints | L | Active + salary &gt; 0; unique month | — |
+| HR salary constraints | L | Active + salary > 0; unique month | — |
 
 ## Invalid data
 
@@ -81,8 +83,8 @@ Optional live READ/WRITE: set `TBOOKS_GOOGLE_SA_JSON` or drop a service-account 
 
 | Case | Bound |
 |---|---|
-| Mixed sheet ~1000 rows parse + apply | No panic; skipped &gt; 0; valid kept |
-| 2000 vouchers × 5 payments | Apply &lt; 30s; RSS &lt; 1.5 GB |
+| Mixed sheet ~1000 rows parse + apply | No panic; skipped > 0; valid kept |
+| 2000 vouchers × 5 payments | Apply < 30s; RSS < 1.5 GB |
 | `t-books-stress` bin | Optional; cap `TBOOKS_STRESS_VOUCHERS` |
 
 ## Google Sheets (MemoryHive / MemorySheet)
