@@ -18,6 +18,7 @@ Names do not contain documents. Documents point at names. A card adds them up.
     +-- Vendor card <---- Voucher, Purchase
     +-- Sales order card ----> Job + line items
     +-- Purchase bill card ----> Job + line items + PAY
+    +-- Finance year ----> trial of that year only
 ```
 
 ## Board
@@ -61,6 +62,15 @@ The card loads the full document, not the list row.
 
 A list row has no lines until the card opens.
 
+## Finance year
+
+Year starts 1 April.
+
+A voucher dated 12.04.2025 is 12 Apr 2025. It belongs to 2025-26.
+A voucher dated 31.03.2025 belongs to 2024-25.
+
+Pick a year on Finance. Only that year is added. Debit must equal credit.
+
 ## Example
 
 Job **Plant 2 – Hydraulics**
@@ -86,3 +96,4 @@ Star Engineering vendor card lists the jobs that party billed.
 - A job is not a folder of files
 - A vendor does not belong to one job
 - Opening a card does not call the company file
+- Changing the year does not post
