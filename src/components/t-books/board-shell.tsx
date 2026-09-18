@@ -12,7 +12,7 @@ import { UnsavedProvider, useUnsaved } from "./unsaved-guard";
 const VouchersScreen = lazy(() => import("./vouchers-screen"));
 const VendorsScreen = lazy(() => import("./vendors-screen"));
 const ProjectsScreen = lazy(() => import("./projects-screen"));
-const SalesScreen = lazy(() => import("./sales-screen"));
+const SalesScreen = lazy(() => import("./sales-gate"));
 const PurchaseScreen = lazy(() => import("./purchase-screen"));
 const HrScreen = lazy(() => import("./hr-screen"));
 const TrialScreen = lazy(() => import("./trial-screen"));
@@ -101,7 +101,13 @@ function BoardShellInner() {
                 }
               />
             ) : active === "sales" ? (
-              <SalesScreen onBack={() => go("board")} focusId={focusId} />
+              <SalesScreen
+                onBack={() => go("board")}
+                focusId={focusId}
+                onOpenProject={(project) =>
+                  go("projects", { kind: "project", id: project, title: project, subtitle: "" })
+                }
+              />
             ) : active === "purchase" ? (
               <PurchaseScreen onBack={() => go("board")} focusId={focusId} />
             ) : active === "hr" ? (
