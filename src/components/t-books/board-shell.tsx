@@ -20,6 +20,7 @@ const InventoryScreen = lazy(() => import("./inventory-screen"));
 const LogisticsScreen = lazy(() => import("./logistics-screen"));
 const DocumentsScreen = lazy(() => import("./documents-screen"));
 const DuplicatesScreen = lazy(() => import("./duplicates-screen"));
+const MergeScreen = lazy(() => import("./merge-screen"));
 const ExplorerScreen = lazy(() => import("./explorer-screen"));
 const RulesScreen = lazy(() => import("./rules-screen"));
 const SettingsScreen = lazy(() => import("./settings-screen"));
@@ -93,6 +94,8 @@ function BoardShellInner() {
               <DocumentsScreen onBack={() => go("board")} />
             ) : active === "duplicates" ? (
               <DuplicatesScreen onBack={() => go("board")} />
+            ) : active === "merge" ? (
+              <MergeScreen onBack={() => go("board")} />
             ) : active === "explorer" ? (
               <ExplorerScreen onBack={() => go("board")} />
             ) : active === "rules" ? (
