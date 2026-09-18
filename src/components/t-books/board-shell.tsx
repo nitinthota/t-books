@@ -1,10 +1,8 @@
-import { lazy, memo, Suspense, useCallback, useEffect, useState } from "react";
-import { formatRupees } from "@/lib/t-books/business_rules";
+import { lazy, Suspense, useCallback, useState } from "react";
 import { canOpenAccess } from "@/lib/t-books/rbac";
 import { useBooks } from "@/lib/t-books/store";
-import type { DirtyKey, NavId, SearchHit } from "@/lib/t-books/types";
-import { invokeCommand, isTauriRuntime } from "@/lib/t-books/platform";
-import { listDirtyKeys } from "@/lib/t-books/vouchers";
+import type { NavId, SearchHit } from "@/lib/t-books/types";
+import { BoardHome } from "./board-home";
 import { DesktopLayout } from "./desktop-layout";
 import { ScreenSkeleton } from "./skeleton";
 import { UnsavedProvider, useUnsaved } from "./unsaved-guard";
@@ -68,7 +66,7 @@ function BoardShellInner() {
         {active === "board" ? (
           <section className="enter">
             <h1 className="text-3xl font-medium tracking-tight">Board</h1>
-            <BoardBody onOpenVouchers={() => go("vouchers")} />
+            <BoardHome onOpen={(nav) => go(nav)} />
           </section>
         ) : (
           <Suspense fallback={<ScreenSkeleton />}>
@@ -143,96 +141,5 @@ function BoardShellInner() {
         )}
       </div>
     </DesktopLayout>
-  );
-}
-
-const BoardBody = memo(function BoardBody({ onOpenVouchers }: { onOpenVouchers: () => void }) {
-  const summary = useBooks((s) => s.voucherSummary);
-  const lastError = useBooks((s) => s.lastError);
-  const count = summary?.count ?? 0;
-  const dirty = summary?.dirty ?? 0;
-  const remaining = summary?.remainingTotal ?? 0;
-  const [keys, setKeys] = useState<DirtyKey[]>([]);
-
-  useEffect(() => {
-    void (async () => {
-      try {
-        const list = isTauriRuntime()
-          ? await invokeCommand<DirtyKey[]>("get_dirty_keys")
-          : listDirtyKeys();
-        setKeys(list);
-      } catch {
-        /* board still shows last summary */
-      }
-    })();
-  }, [summary, lastError]);
-
-  return (
-    <div className="mt-8">
-      {lastError ? (
-        <p className="mb-4 text-sm text-gold">Refresh failed. Previous figures are kept.</p>
-      ) : null}
-      {count === 0 && !lastError ? (
-        <p className="text-sm text-ink-muted">No vouchers yet. Refresh loads the register.</p>
-      ) : (
-        <>
-          <p className="text-xs text-ink-subtle">
-            {summary?.lastSynced ? `Last refreshed ${summary.lastSynced}` : "Not refreshed yet."}
-          </p>
-          <button
-            type="button"
-            onClick={onOpenVouchers}
-            className="board-card pressable mt-4 w-full rounded-lg bg-paper-raised p-5 text-left ring-1 ring-line"
-          >
-            <div className="grid grid-cols-3 gap-4">
-              <BoardFigure label="Vouchers" value={String(count)} />
-              <BoardFigure label="Still to pay" value={formatRupees(remaining)} emphasis />
-              <BoardFigure label="Unsynced" value={String(keys.length || dirty)} gold={(keys.length || dirty) > 0} />
-            </div>
-          </button>
-        </>
-      )}
-      {keys.length > 0 ? (
-        <div className="mt-6 rounded-lg bg-paper-raised p-4 ring-1 ring-line">
-          <p className="text-xs font-medium uppercase tracking-wide text-ink-subtle">Not posted</p>
-          <ul className="mt-2 max-h-40 overflow-auto text-sm">
-            {keys.map((k) => (
-              <li key={`${k.kind}-${k.key}`} className="py-1">
-                {k.kind} {k.key}
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-    </div>
-  );
-});
-
-function BoardFigure({
-  label,
-  value,
-  emphasis,
-  gold,
-}: {
-  label: string;
-  value: string;
-  emphasis?: boolean;
-  gold?: boolean;
-}) {
-  return (
-    <div>
-      <p className="text-xs text-ink-subtle">{label}</p>
-      <p
-        className={
-          gold
-            ? "money-figure mt-1 text-3xl text-gold"
-            : emphasis
-              ? "money-figure mt-1 text-3xl text-navy"
-              : "money-figure mt-1 text-3xl"
-        }
-      >
-        {value}
-      </p>
-    </div>
   );
 }
