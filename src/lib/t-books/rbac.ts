@@ -17,6 +17,8 @@ export function canEditBooks(role: Role): boolean {
   return role === "owner" || role === "admin" || role === "operator";
 }
 
+export const canMutate = canEditBooks;
+
 export function canRefresh(role: Role): boolean {
   return role === "owner" || role === "admin";
 }
