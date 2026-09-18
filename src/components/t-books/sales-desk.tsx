@@ -1,10 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { formatRupees } from "@/lib/t-books/business_rules";
-import { listSalesPo } from "@/lib/t-books/office";
+import { getSalesPo, listSalesPo, saveSalesPo } from "@/lib/t-books/office";
 import { invokeErrorMessage } from "@/lib/t-books/platform";
 import type { SalesPo } from "@/lib/t-books/types";
 import { ModuleFrame } from "./module-frame";
+import {
+  draftsFromItems,
+  parseItemDrafts,
+  PoItemsEditor,
+  type ItemDraft,
+} from "./po-items-editor";
 import { TableCell, TableHeadCell, VirtualTable } from "./virtual-table";
 
 export default function SalesDesk({
@@ -23,6 +29,8 @@ export default function SalesDesk({
   const [rows, setRows] = useState<SalesPo[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [card, setCard] = useState<SalesPo | null>(null);
+  const [lines, setLines] = useState<ItemDraft[]>([]);
+  const [busy, setBusy] = useState(false);
   const [query, setQuery] = useState("");
 
   const reload = useCallback(async () => {
@@ -42,9 +50,51 @@ export default function SalesDesk({
   useEffect(() => {
     if (!focusId) return;
     const id = Number(focusId);
-    if (Number.isFinite(id) && id > 0) onEdit(id);
+    if (Number.isFinite(id) && id > 0) void openCard(id);
     else setQuery(focusId);
-  }, [focusId, onEdit]);
+  }, [focusId]);
+
+  async function openCard(id: number) {
+    setBusy(true);
+    try {
+      const po = await getSalesPo(id);
+      setCard(po);
+      setLines(draftsFromItems(po.items ?? []));
+      setError(null);
+    } catch (err) {
+      setError(invokeErrorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveLines() {
+    if (!card) return;
+    setBusy(true);
+    try {
+      const items = parseItemDrafts(lines);
+      const saved = await saveSalesPo({
+        id: card.id,
+        project: card.project,
+        poNumber: card.poNumber,
+        client: card.client,
+        gst: card.gst,
+        items,
+        kind: card.kind === "project" ? "project" : "contract",
+        receivedRupees: card.receivedRupees ?? 0,
+        paymentTermValue: card.paymentTermValue ?? 0,
+        paymentTermUnit: card.paymentTermUnit === "months" ? "months" : "days",
+      });
+      setCard(saved);
+      setLines(draftsFromItems(saved.items ?? []));
+      await reload();
+      setError(null);
+    } catch (err) {
+      setError(invokeErrorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   const job = query.trim().toLowerCase();
   const visible = useMemo(() => {
@@ -63,10 +113,17 @@ export default function SalesDesk({
     return (
       <ModuleFrame
         title={card.poNumber || "Sales order"}
-        hint="This order only."
+        hint="Lines belong on this order. Add, change or delete a row, then Save."
         onBack={() => setCard(null)}
         error={error}
-        actions={<Button onClick={() => onEdit(card.id)}>Edit</Button>}
+        actions={
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => void saveLines()} disabled={busy}>
+              {busy ? "Saving…" : "Save lines"}
+            </Button>
+            <Button onClick={() => onEdit(card.id)}>Full edit</Button>
+          </div>
+        }
       >
         <dl className="grid gap-3 text-sm sm:grid-cols-2">
           <Item
@@ -80,8 +137,10 @@ export default function SalesDesk({
           <Item label="Value" value={formatRupees(card.totalValue)} />
           <Item label="Received" value={formatRupees(received)} />
           <Item label="Balance" value={formatRupees(card.totalValue - received)} />
-          <Item label="Lines" value={String(card.items?.length ?? 0)} />
         </dl>
+        <div className="mt-6">
+          <PoItemsEditor items={lines} onChange={setLines} />
+        </div>
       </ModuleFrame>
     );
   }
@@ -89,7 +148,7 @@ export default function SalesDesk({
   return (
     <ModuleFrame
       title="Sales"
-      hint="Open an order for the full picture. Click the job to open that job."
+      hint="Open an order to see every line. Add or delete rows there."
       onBack={onBack}
       error={error}
       actions={
@@ -129,7 +188,7 @@ export default function SalesDesk({
           renderRow={(row) => {
             const received = row.receivedRupees ?? 0;
             return (
-              <tr className="table-row cursor-pointer" onClick={() => setCard(row)}>
+              <tr className="table-row cursor-pointer" onClick={() => void openCard(row.id)}>
                 <TableCell>
                   {row.poNumber}
                   {row.isDirty ? <span className="ml-2 text-xs text-gold">unsynced</span> : null}
