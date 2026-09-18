@@ -13,7 +13,7 @@ const VouchersScreen = lazy(() => import("./vouchers-screen"));
 const VendorsScreen = lazy(() => import("./vendors-screen"));
 const ProjectsScreen = lazy(() => import("./projects-screen"));
 const SalesScreen = lazy(() => import("./sales-gate"));
-const PurchaseScreen = lazy(() => import("./purchase-screen"));
+const PurchaseScreen = lazy(() => import("./purchase-gate"));
 const HrScreen = lazy(() => import("./hr-screen"));
 const TrialScreen = lazy(() => import("./trial-screen"));
 const InventoryScreen = lazy(() => import("./inventory-screen"));
@@ -109,7 +109,13 @@ function BoardShellInner() {
                 }
               />
             ) : active === "purchase" ? (
-              <PurchaseScreen onBack={() => go("board")} focusId={focusId} />
+              <PurchaseScreen
+                onBack={() => go("board")}
+                focusId={focusId}
+                onOpenProject={(project) =>
+                  go("projects", { kind: "project", id: project, title: project, subtitle: "" })
+                }
+              />
             ) : active === "hr" ? (
               <HrScreen onBack={() => go("board")} />
             ) : active === "finance" ? (
