@@ -2,19 +2,43 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-fn parse_iso_ymd(iso: &str) -> Option<(i32, u32, u32)> {
-    let d = iso.trim();
-    let d = if d.len() >= 10 { &d[..10] } else { d };
-    if d.len() != 10 || d.as_bytes().get(4) != Some(&b'-') || d.as_bytes().get(7) != Some(&b'-') {
-        return None;
-    }
-    let y: i32 = d[0..4].parse().ok()?;
-    let m: u32 = d[5..7].parse().ok()?;
-    let day: u32 = d[8..10].parse().ok()?;
-    if !(1..=12).contains(&m) || !(1..=31).contains(&day) {
+fn ymd(y: i32, m: u32, day: u32) -> Option<(i32, u32, u32)> {
+    if !(1990..=2100).contains(&y) || !(1..=12).contains(&m) || !(1..=31).contains(&day) {
         return None;
     }
     Some((y, m, day))
+}
+
+/// Accepts `2024-04-05`, `05.04.2024`, `05/04/2024`, `05-04-2024`.
+pub fn parse_book_date(raw: &str) -> Option<(i32, u32, u32)> {
+    let d = raw.trim();
+    if d.len() >= 10 && d.as_bytes().get(4) == Some(&b'-') && d.as_bytes().get(7) == Some(&b'-') {
+        let y: i32 = d[0..4].parse().ok()?;
+        let m: u32 = d[5..7].parse().ok()?;
+        let day: u32 = d[8..10].parse().ok()?;
+        return ymd(y, m, day);
+    }
+    let sep = if d.contains('.') {
+        '.'
+    } else if d.contains('/') {
+        '/'
+    } else if d.matches('-').count() == 2 {
+        '-'
+    } else {
+        return None;
+    };
+    let parts: Vec<&str> = d.split(sep).collect();
+    if parts.len() != 3 {
+        return None;
+    }
+    let day: u32 = parts[0].parse().ok()?;
+    let m: u32 = parts[1].parse().ok()?;
+    let y: i32 = parts[2].parse().ok()?;
+    ymd(y, m, day)
+}
+
+fn parse_iso_ymd(iso: &str) -> Option<(i32, u32, u32)> {
+    parse_book_date(iso)
 }
 
 /// Days since Unix epoch → civil UTC date (Howard Hinnant).
@@ -148,6 +172,13 @@ mod tests {
         assert_eq!(signed_dr_cr(-50), (0, 50));
         assert!(trial_balanced(&[(100, 0), (0, 100)]));
         assert!(!trial_balanced(&[(100, 0), (0, 90)]));
+    }
+
+    #[test]
+    fn dotted_indian_date_is_an_fy_day() {
+        assert_eq!(parse_book_date("05.04.2024"), Some((2024, 4, 5)));
+        assert_eq!(parse_book_date("2024-04-05"), Some((2024, 4, 5)));
+        assert!(fy_options(Some("05.04.2024"), Some("12.03.2026"), Some("2026-09-12")).contains(&"2024-25".into()));
     }
 
     #[test]
