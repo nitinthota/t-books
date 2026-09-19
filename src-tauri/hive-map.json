@@ -2,7 +2,7 @@
   "version": 1,
   "validatedAgainst": "Sheet hive plan structure agent bc-2a7edae8-704c-4c15-b8d8-edd6451f48f4",
   "rawSource": {
-    "name": "VOUCHER_RAW_Data archive",
+    "name": "ARCHIVE — Voucher_Data (do not add bills)",
     "spreadsheetId": "1J9ZuNL1uZ7DmqOGIZojuOCMeYp9VnC-SEow6YG86cgE",
     "tab": "Voucher_Raw_Data",
     "gid": 0,
@@ -110,6 +110,15 @@
       "write": true
     },
     {
+      "key": "purchase_payments",
+      "title": "Loopbooks — Purchase payments",
+      "id": "1W5M9B3MjlEtwaSvvf4fIlyT-EU4ADxIFUJ7OP4yagAA",
+      "folderKey": "work",
+      "kind": "payment",
+      "tab": "Purchase payments",
+      "write": true
+    },
+    {
       "key": "purchase_lines",
       "title": "Loopbooks — Purchase lines",
       "id": "1fezNOJuKOta5oErFwiKXEH6-oSn45oiZvTwXsVIQ0dI",
@@ -204,13 +213,6 @@
       "tab": "Migration_Log",
       "kind": "migration_log",
       "write": true
-    },
-    {
-      "workbookKey": "purchase_orders",
-      "tab": "Purchase payments",
-      "kind": "payment",
-      "write": true,
-      "note": "PAY-n against PUR-n. Do not write these onto Loopbooks — Payments (those are voucher payment lines)."
     },
     {
       "workbookKey": "sales_orders",
