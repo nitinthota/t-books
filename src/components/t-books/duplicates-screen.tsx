@@ -1,114 +1,45 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import {
-  listDuplicates,
-  mergeMaster,
-  type DuplicateGroup,
-  type DuplicatesReport,
-} from "@/lib/t-books/control";
+import { listDuplicates, mergeMaster } from "@/lib/t-books/control";
+import { groupSimilarNames, type NameGroup } from "@/lib/t-books/name-match";
 import { listProjects, listPurchasePo, listVendors } from "@/lib/t-books/office";
 import { invokeErrorMessage } from "@/lib/t-books/platform";
 import { loadVoucherList } from "@/lib/t-books/vouchers";
 import { ModuleFrame } from "./module-frame";
 
-const DROP = new Set([
-  "pvt",
-  "ltd",
-  "limited",
-  "co",
-  "company",
-  "engg",
-  "engineering",
-  "and",
-  "the",
-]);
-
-function tokens(name: string): string[] {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim()
-    .split(/\s+/)
-    .filter((t) => t && !DROP.has(t));
-}
-
-function fold(name: string): string {
-  return tokens(name).sort().join(" ");
-}
-
-function close(a: string, b: string): boolean {
-  if (!a || !b) return false;
-  if (a === b) return true;
-  const A = new Set(a.split(" "));
-  const B = new Set(b.split(" "));
-  let hit = 0;
-  for (const t of A) if (B.has(t) && t.length > 2) hit += 1;
-  if (hit >= 2) return true;
-  if (A.size === 1 && B.has([...A][0])) return true;
-  if (B.size === 1 && A.has([...B][0])) return true;
-  return false;
-}
-
-function groupNames(rows: Array<{ id: string; name: string }>): DuplicateGroup[] {
-  const unique = new Map<string, { id: string; name: string }>();
-  for (const row of rows) {
-    const name = row.name.trim();
-    if (!name) continue;
-    const id = row.id.trim() || name;
-    unique.set(id.toLowerCase(), { id, name });
-  }
-  const list = [...unique.values()].map((row) => ({ ...row, key: fold(row.name) }));
-  const used = new Set<string>();
-  const groups: DuplicateGroup[] = [];
-  for (let i = 0; i < list.length; i++) {
-    if (used.has(list[i].id)) continue;
-    const bucket = [list[i]];
-    for (let j = i + 1; j < list.length; j++) {
-      if (used.has(list[j].id)) continue;
-      if (close(list[i].key, list[j].key)) bucket.push(list[j]);
-    }
-    const names = new Set(bucket.map((v) => v.name.toLowerCase()));
-    if (names.size < 2) continue;
-    for (const row of bucket) used.add(row.id);
-    groups.push({
-      key: bucket[0].key || bucket[0].name.toLowerCase(),
-      variants: bucket.map(({ id, name }) => ({ id, name })),
-    });
-  }
-  return groups;
-}
-
 export default function DuplicatesScreen({ onBack }: { onBack: () => void }) {
-  const [data, setData] = useState<DuplicatesReport | null>(null);
+  const [serials, setSerials] = useState<{ voucherNo: string; count: number }[]>([]);
+  const [vendors, setVendors] = useState<NameGroup[]>([]);
+  const [jobs, setJobs] = useState<NameGroup[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [report, vendors, projects, vouchers, bills] = await Promise.all([
+      const [report, vendorRows, projects, vouchers, bills] = await Promise.all([
         listDuplicates(),
         listVendors(),
         listProjects(),
         loadVoucherList(),
         listPurchasePo(),
       ]);
-      const vendorRows = [
-        ...vendors.map((v) => ({ id: v.vendor, name: v.vendor })),
-        ...vouchers.map((v) => ({ id: v.vendor, name: v.vendor })),
-        ...bills.map((v) => ({ id: v.vendor, name: v.vendor })),
-        ...report.vendors.flatMap((g) => g.variants),
-      ];
-      const projectRows = [
-        ...projects.map((p) => ({ id: p, name: p })),
-        ...vouchers.map((v) => ({ id: v.project, name: v.project })),
-        ...bills.map((v) => ({ id: v.project, name: v.project })),
-        ...report.projects.flatMap((g) => g.variants),
-      ];
-      setData({
-        serials: report.serials,
-        vendors: groupNames(vendorRows),
-        projects: groupNames(projectRows),
-      });
+      setSerials(report.serials);
+      setVendors(
+        groupSimilarNames([
+          ...vendorRows.map((v) => ({ id: v.vendor, name: v.vendor })),
+          ...vouchers.map((v) => ({ id: v.vendor, name: v.vendor })),
+          ...bills.map((v) => ({ id: v.vendor, name: v.vendor })),
+          ...report.vendors.flatMap((g) => g.variants),
+        ]),
+      );
+      setJobs(
+        groupSimilarNames([
+          ...projects.map((p) => ({ id: p, name: p })),
+          ...vouchers.map((v) => ({ id: v.project, name: v.project })),
+          ...bills.map((v) => ({ id: v.project, name: v.project })),
+          ...report.projects.flatMap((g) => g.variants),
+        ]),
+      );
       setError(null);
     } catch (err) {
       setError(invokeErrorMessage(err));
@@ -134,12 +65,12 @@ export default function DuplicatesScreen({ onBack }: { onBack: () => void }) {
   return (
     <ModuleFrame
       title="Duplicates"
-      hint="Similar names are listed. You pick the name to keep. Duplicate voucher numbers are never merged."
+      hint="Close spellings and short forms are grouped here. You pick the name to keep. Voucher numbers are never merged."
       onBack={onBack}
       error={error}
     >
-      <Section title="Voucher numbers" empty="No duplicate voucher numbers." count={data?.serials.length ?? 0}>
-        {(data?.serials ?? []).map((s) => (
+      <Section title="Voucher numbers" empty="No duplicate voucher numbers." count={serials.length}>
+        {serials.map((s) => (
           <li key={s.voucherNo} className="flex justify-between px-4 py-3">
             <span className="font-mono text-sm">{s.voucherNo}</span>
             <span className="text-sm text-ink-muted">{s.count} times · not merged</span>
@@ -149,14 +80,14 @@ export default function DuplicatesScreen({ onBack }: { onBack: () => void }) {
       <MergeGroups
         title="Vendor names"
         empty="No similar vendor names."
-        groups={data?.vendors ?? []}
+        groups={vendors}
         busy={busy}
         onMerge={(keep, absorb) => void onMerge("vendor", keep, absorb)}
       />
       <MergeGroups
         title="Job names"
         empty="No similar job names."
-        groups={data?.projects ?? []}
+        groups={jobs}
         busy={busy}
         onMerge={(keep, absorb) => void onMerge("project", keep, absorb)}
       />
@@ -192,7 +123,7 @@ function MergeGroups({
 }: {
   title: string;
   empty: string;
-  groups: DuplicateGroup[];
+  groups: NameGroup[];
   busy: boolean;
   onMerge: (keepId: string, absorbIds: string[]) => void;
 }) {
@@ -210,16 +141,18 @@ function MergeRow({
   busy,
   onMerge,
 }: {
-  group: DuplicateGroup;
+  group: NameGroup;
   busy: boolean;
   onMerge: (keepId: string, absorbIds: string[]) => void;
 }) {
   const variants = group.variants;
   const [keepId, setKeepId] = useState(variants[0]?.id ?? "");
   return (
-    <li className="flex flex-col gap-3 border-t border-line px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+    <li className="flex flex-col gap-3 border-t border-line px-4 py-3 sm:flex-row sm:items-start sm:justify-between">
       <fieldset className="space-y-1">
-        <p className="text-xs text-ink-subtle">Similar to “{group.key}”</p>
+        <p className="text-xs text-ink-subtle">
+          {group.why} · {group.score}
+        </p>
         {variants.map((v) => (
           <label key={v.id} className="flex items-center gap-2 text-sm">
             <input
