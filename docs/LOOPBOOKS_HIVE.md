@@ -1,10 +1,8 @@
 # Loopbooks hive
 
-One folder. Human names on the first row. The app maps those names. The old raw sheet is archive only.
+One folder. Human names on the first row. The app maps those names. The old raw sheet is archive only. Do not add new bills there.
 
 ## Folder
-
-Loopbooks hive
 
 ```
 Loopbooks hive
@@ -12,67 +10,65 @@ Loopbooks hive
   Work         parties, jobs, orders, people, stock
   Control      who may sign in, rules
   Documents    printed copies
-  Archive      old raw sheet — do not add new bills
+  Archive      old raw sheet — closed
 ```
 
-## Books
+## Books (report + app)
 
-| File | First row | For a clerk | For the app |
-|---|---|---|---|
-| Loopbooks — Voucher register | Voucher no, Date, Vendor, Project, Tax invoice, What it is for, Bill ₹, Paid ₹, TDS ₹, Due ₹, Status, Vendor bank, Account, IFSC, GSTIN, Remarks, Paper | One bill, one row | Submit / Refresh of a voucher |
-| Loopbooks — Payments | Voucher no, Payment #, Date, Amount ₹, TDS ₹, UTR / ref, What it is for, Remarks | 1st payment, 2nd payment | Occupied payment slots |
-| Loopbooks — Outstanding | | Who still has to pay | Board tile |
-| Loopbooks — Trial balance | | Year trial | Finance |
-| Loopbooks — Board | | Company home | Board figures |
-| Loopbooks — Result | | Year result | Report |
-
-## Work
-
-| File | First row | For a clerk | For the app |
-|---|---|---|---|
-| Loopbooks — Vendors | Vendor, GSTIN, Bank, Account, IFSC, Usual project, Notes | Party master | Vendor card |
-| Loopbooks — Jobs | Project, Vouchers, Billed ₹, Paid ₹, Due ₹, Customer PO ₹, Notes | Job card | Job counts |
-| Loopbooks — Purchase orders | PO number, Date, Vendor, Project, Status, Subtotal ₹, GST ₹, Total ₹, Paid ₹, Balance ₹, Payment terms, Notes | PUR-n | Purchase Submit |
-| Loopbooks — Purchase lines | | Hose, qty, rate | Line table |
-| Loopbooks — Sales orders | | SAL-n | Sales Submit |
-| Loopbooks — Sales lines | | Customer lines | Line table |
-| Loopbooks — HR people | | Staff | HR |
-| Loopbooks — Payslips | | Month pay | Payroll |
-| Loopbooks — Stock | | Items | Inventory |
-| Loopbooks — Trips | | Movement | Logistics |
-
-Missing file the app still looks for by tab name: **Purchase payments** (PAY-n against PUR-n). Today voucher payments live on **Loopbooks — Payments**. PAY-n should be its own book next to Purchase orders.
-
-## Control
+Frozen first row. Filter on. Money columns are rupees.
 
 | File | First row |
 |---|---|
-| Loopbooks — Access | Name, Email, Role, Active |
-| Loopbooks — Rules | When / then |
+| Loopbooks — Voucher register | Voucher no, Date, Vendor, Project, Tax invoice, What it is for, Bill ₹, Paid ₹, TDS ₹, Due ₹, Status, Vendor bank, Account, IFSC, GSTIN, Remarks, Paper |
+| Loopbooks — Payments | Voucher no, Payment #, Date, Amount ₹, TDS ₹, UTR / ref, What it is for, Remarks |
+| Loopbooks — Outstanding | Who still has to pay |
+| Loopbooks — Trial balance | Year trial |
+| Loopbooks — Board | Company home |
+| Loopbooks — Result | Year result |
 
-## Archive — do not add new bills
+One bill = one row on Voucher register. Each payment on that bill = one row on Payments (1, 2, 3…).
 
-Workbook **Voucher_Data**, tab **Voucher_Raw_Data**
+## Work
 
-https://docs.google.com/spreadsheets/d/1J9ZuNL1uZ7DmqOGIZojuOCMeYp9VnC-SEow6YG86cgE
+| File | First row |
+|---|---|
+| Loopbooks — Vendors | Vendor, GSTIN, Bank, Account, IFSC, Usual project, Notes |
+| Loopbooks — Jobs | Project, Vouchors, Billed ₹, Paid ₹, Due ₹, Customer PO ₹, Notes |
+| Loopbooks — Purchase orders | PO number, Date, Vendor, Project, Status, money columns, Notes |
+| Loopbooks — Purchase lines | Item lines for PUR-n |
+| Loopbooks — Sales orders / Sales lines | SAL-n and lines |
+| Loopbooks — HR people / Payslips | Staff and month pay |
+| Loopbooks — Stock / Trips | Items and movement |
 
-One row = one voucher with five payment blocks across the row. That is why a clerk cannot read it as a report.
+PAY-n against PUR-n belongs on a **Purchase payments** tab inside Purchase orders, not on Loopbooks — Payments.
 
-Move rule:
+## Control
 
-- Column A integer → Voucher no on Voucher register
-- Date, vendor, project, tax invoice, bank, GST → same names on Voucher register
-- Each occupied payment block → one row on Payments (Payment # 1, 2, 3…)
-- Dotted children (20.1) stay off column A
+Access: Name, Email, Role, Active.
 
-Checked on 19 Sep 2026: raw tab about 540 rows. Voucher register about 180 rows. Payments about 270 rows. Not all raw bills are on the register yet.
+## Move check (19 Sep 2026)
 
-## One name everywhere
+Raw tab `Voucher_Raw_Data` has many blank rows.
 
-Vendor and job names on register, payments, purchase, sales, and master lists must be the same spelling. Keep this name on Duplicates writes this PC then posts each bill.
+Usable bills (integer number + vendor):
 
-## What the app must not do
+- Already on Voucher register: **179**
+- Already on Payments: **269**
+- Extra raw bills that still needed a row: **0**
+- Raw rows skipped: blank **874**, no vendor **4**
 
-- Do not write new bills to Voucher_Raw_Data
-- Do not look at the company file when you only open a card
-- Do not replace a posted PUR-n / PAY-n
+So every bill that can live on Loopbooks is already there. Nothing left to copy except empty rows.
+
+## Unlink
+
+`hive-map.json` already marks raw `write: false`. The app must not write that tab.
+
+Refresh on the installed build still *reads* raw for history. Live Submit already writes Voucher register + Payments.
+
+New formatted copies could not be uploaded: this Google Drive is out of space. Free space, then replace the four Books/Work files from this PC if you want the frozen header + filter layout.
+
+## What never happens
+
+- New bills on Voucher_Raw_Data
+- Opening a card calling Google
+- Rewriting a posted PUR-n / PAY-n
