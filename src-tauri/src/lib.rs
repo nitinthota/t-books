@@ -7,6 +7,7 @@ mod db;
 mod hive;
 mod hive_plan;
 mod log;
+mod master_rewrite;
 mod masters;
 mod migrate;
 mod office;
