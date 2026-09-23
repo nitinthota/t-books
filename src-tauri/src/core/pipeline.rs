@@ -128,6 +128,25 @@ fn decide_refresh(facts: &Facts) -> Decision {
     Decision::ApplyRefresh { skip_keys: vec![] }
 }
 
+/// Additive. Safe to call on every write. Does not touch other tables.
+pub fn ensure_zef_table(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS zef_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts TEXT NOT NULL,
+            actor TEXT NOT NULL DEFAULT '',
+            intent TEXT NOT NULL,
+            book TEXT NOT NULL,
+            key TEXT NOT NULL,
+            payload TEXT NOT NULL DEFAULT '{}',
+            decision TEXT NOT NULL DEFAULT '',
+            detail TEXT NOT NULL DEFAULT ''
+        );
+        CREATE INDEX IF NOT EXISTS idx_zef_events_book_key ON zef_events(book, key);",
+    )?;
+    Ok(())
+}
+
 /// Append-only. Never update an old row.
 pub fn append_event(
     conn: &Connection,
@@ -135,6 +154,7 @@ pub fn append_event(
     decision: &Decision,
     detail: &str,
 ) -> Result<i64> {
+    ensure_zef_table(conn)?;
     conn.execute(
         "INSERT INTO zef_events (ts, actor, intent, book, key, payload, decision, detail)
          VALUES (datetime('now'), ?1, ?2, ?3, ?4, '{}', ?5, ?6)",
@@ -151,6 +171,7 @@ pub fn append_event(
 }
 
 pub fn list_events_for_key(conn: &Connection, book: &str, key: &str) -> Result<Vec<(String, String)>> {
+    ensure_zef_table(conn)?;
     let mut stmt = conn.prepare(
         "SELECT intent, decision FROM zef_events WHERE book = ?1 AND key = ?2 ORDER BY id",
     )?;
