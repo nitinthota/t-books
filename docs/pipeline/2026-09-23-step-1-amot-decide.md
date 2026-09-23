@@ -8,7 +8,7 @@ Does not replace the design file.
 
 One function, `decide(event, facts)`, answers Save / Submit / Refresh.
 One SQLite table, `zef_events`, stores every decision. Rows are only inserted.
-Screens are not changed in this step.
+The table is created on first use. Schema version stays 11. Screens are not changed.
 
 ## Criteria
 
@@ -34,7 +34,7 @@ Facts (online, dirty, posted_forever, can_submit, known_fp, hive_fp, dirty_keys)
 ```
 
 Code: `src-tauri/src/core/pipeline.rs`
-Table: `zef_events` in schema 12
+Table: `zef_events` created by `ensure_zef_table` on first append.
 
 ## Next
 
