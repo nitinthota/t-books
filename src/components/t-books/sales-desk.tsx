@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { formatRupees } from "@/lib/t-books/business_rules";
-import { getSalesPo, listSalesPo, saveSalesPo } from "@/lib/t-books/office";
+import { getSalesPo, listPurchasePo, listSalesPo, saveSalesPo } from "@/lib/t-books/office";
 import { invokeErrorMessage } from "@/lib/t-books/platform";
-import type { SalesPo } from "@/lib/t-books/types";
+import type { PurchasePo, SalesPo } from "@/lib/t-books/types";
 import { ModuleFrame } from "./module-frame";
 import {
   draftsFromItems,
@@ -27,6 +27,7 @@ export default function SalesDesk({
   onNew: (kind: "contract" | "project") => void;
 }) {
   const [rows, setRows] = useState<SalesPo[] | null>(null);
+  const [bills, setBills] = useState<PurchasePo[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [card, setCard] = useState<SalesPo | null>(null);
   const [lines, setLines] = useState<ItemDraft[]>([]);
@@ -35,7 +36,9 @@ export default function SalesDesk({
 
   const reload = useCallback(async () => {
     try {
-      setRows(await listSalesPo());
+      const [list, purchaseRows] = await Promise.all([listSalesPo(), listPurchasePo()]);
+      setRows(list);
+      setBills(purchaseRows);
       setError(null);
     } catch (err) {
       setError(invokeErrorMessage(err));
@@ -110,10 +113,14 @@ export default function SalesDesk({
 
   if (card) {
     const received = card.receivedRupees ?? 0;
+    const jobKey = card.project.trim().toLowerCase();
+    const relatedBills = jobKey
+      ? bills.filter((row) => row.project.trim().toLowerCase() === jobKey)
+      : [];
     return (
       <ModuleFrame
         title={card.poNumber || "Sales order"}
-        hint="Lines belong on this order. Add, change or delete a row, then Save."
+        hint="This order only. Lines belong here."
         onBack={() => setCard(null)}
         error={error}
         actions={
@@ -125,7 +132,12 @@ export default function SalesDesk({
           </div>
         }
       >
-        <dl className="grid gap-3 text-sm sm:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Count label="Lines" value={String(lines.filter((row) => row.description.trim()).length || lines.length)} />
+          <Count label="Received" value={formatRupees(received)} />
+          <Count label="Balance" value={formatRupees(card.totalValue - received)} />
+        </div>
+        <dl className="mt-6 grid gap-3 text-sm sm:grid-cols-2">
           <Item
             label="Project"
             value={card.project}
@@ -135,11 +147,24 @@ export default function SalesDesk({
           <Item label="Kind" value={card.kind === "project" ? "Project" : "Contract"} />
           <Item label="GST" value={card.gst} />
           <Item label="Value" value={formatRupees(card.totalValue)} />
-          <Item label="Received" value={formatRupees(received)} />
-          <Item label="Balance" value={formatRupees(card.totalValue - received)} />
         </dl>
         <div className="mt-6">
           <PoItemsEditor items={lines} onChange={setLines} />
+        </div>
+        <div className="mt-6">
+          <p className="text-xs uppercase tracking-wide text-ink-subtle">Purchase bills on this job</p>
+          {relatedBills.length === 0 ? (
+            <p className="mt-2 text-sm text-ink-muted">No purchase bill on this job yet.</p>
+          ) : (
+            <ul className="mt-2 divide-y divide-line rounded-lg bg-paper-raised ring-1 ring-line">
+              {relatedBills.map((row) => (
+                <li key={row.id} className="flex justify-between px-3 py-2 text-sm">
+                  <span>{row.poNumber}</span>
+                  <span className="text-ink-muted">{row.vendor}</span>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </ModuleFrame>
     );
@@ -203,6 +228,15 @@ export default function SalesDesk({
         />
       </div>
     </ModuleFrame>
+  );
+}
+
+function Count({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg bg-paper-raised p-4 ring-1 ring-line">
+      <p className="text-xs text-ink-subtle">{label}</p>
+      <p className="money-figure mt-1 text-2xl">{value}</p>
+    </div>
   );
 }
 
