@@ -26,6 +26,10 @@ const AccessScreen = lazy(() =>
   import("./access-screen").then((m) => ({ default: m.AccessScreen })),
 );
 
+function hit(kind: SearchHit["kind"], key: string): SearchHit {
+  return { kind, id: key, title: key, subtitle: "" };
+}
+
 export function BoardShell() {
   return (
     <UnsavedProvider>
@@ -42,10 +46,10 @@ function BoardShellInner() {
   const [focusId, setFocusId] = useState<string | null>(null);
 
   const go = useCallback(
-    (id: NavId, hit?: SearchHit) => {
+    (id: NavId, next?: SearchHit) => {
       if (id === "access" && session && !canOpenAccess(session.role)) return;
       requestLeave(() => {
-        setFocusId(hit?.id ?? null);
+        setFocusId(next?.id ?? null);
         setActive(id);
       });
     },
@@ -59,63 +63,56 @@ function BoardShellInner() {
       session={session}
       active={active}
       onNavigate={(id) => go(id)}
-      onSearchOpen={(id, hit) => go(id, hit)}
+      onSearchOpen={(id, next) => go(id, next)}
       onSignOut={() => requestLeave(logout)}
     >
       <div key={active} className="mx-auto w-full max-w-6xl px-6 py-7">
         {active === "board" ? (
           <section className="enter">
             <h1 className="text-3xl font-medium tracking-tight">Board</h1>
-            <BoardHome onOpen={(nav) => go(nav)} />
+            <BoardHome
+              onOpen={(nav, key) => {
+                if (!key) {
+                  go(nav);
+                  return;
+                }
+                const kind = nav === "vendors" ? "vendor" : nav === "projects" ? "project" : nav;
+                go(nav, hit(kind, key));
+              }}
+            />
           </section>
         ) : (
           <Suspense fallback={<ScreenSkeleton />}>
             {active === "vouchers" ? (
-              <VouchersScreen onBack={() => go("board")} focusId={focusId} />
+              <VouchersScreen
+                onBack={() => go("board")}
+                focusId={focusId}
+                onOpen={(nav, key) => go(nav, hit(nav === "vendors" ? "vendor" : "project", key))}
+              />
             ) : active === "vendors" ? (
               <VendorsScreen
                 onBack={() => go("board")}
                 focusId={focusId}
-                onOpen={(nav, key) =>
-                  go(nav, {
-                    kind: nav === "vendors" ? "vendor" : "project",
-                    id: key,
-                    title: key,
-                    subtitle: "",
-                  })
-                }
+                onOpen={(nav, key) => go(nav, hit(nav === "vendors" ? "vendor" : "project", key))}
               />
             ) : active === "projects" ? (
               <ProjectsScreen
                 onBack={() => go("board")}
                 focusId={focusId}
-                onOpen={(nav, key) =>
-                  go(nav, {
-                    kind: nav === "vendors" ? "vendor" : "project",
-                    id: key,
-                    title: key,
-                    subtitle: "",
-                  })
-                }
+                onOpen={(nav, key) => go(nav, hit(nav === "vendors" ? "vendor" : "project", key))}
               />
             ) : active === "sales" ? (
               <SalesScreen
                 onBack={() => go("board")}
                 focusId={focusId}
-                onOpenProject={(project) =>
-                  go("projects", { kind: "project", id: project, title: project, subtitle: "" })
-                }
+                onOpenProject={(project) => go("projects", hit("project", project))}
               />
             ) : active === "purchase" ? (
               <PurchaseScreen
                 onBack={() => go("board")}
                 focusId={focusId}
-                onOpenProject={(project) =>
-                  go("projects", { kind: "project", id: project, title: project, subtitle: "" })
-                }
-                onOpenVendor={(vendor) =>
-                  go("vendors", { kind: "vendor", id: vendor, title: vendor, subtitle: "" })
-                }
+                onOpenProject={(project) => go("projects", hit("project", project))}
+                onOpenVendor={(vendor) => go("vendors", hit("vendor", vendor))}
               />
             ) : active === "hr" ? (
               <HrScreen onBack={() => go("board")} />
