@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { formatRupees } from "@/lib/t-books/business_rules";
+import { formatRupees, paymentOrdinal } from "@/lib/t-books/business_rules";
 import { getPurchasePo, listPurchasePayments, listPurchasePo, savePurchasePo } from "@/lib/t-books/office";
 import { invokeErrorMessage } from "@/lib/t-books/platform";
-import type { PurchasePayment, PurchasePo } from "@/lib/t-books/types";
+import type { PurchasePayment, PurchasePo, VoucherListRow } from "@/lib/t-books/types";
+import { loadVoucherList } from "@/lib/t-books/vouchers";
 import { ModuleFrame } from "./module-frame";
 import { draftsFromItems, parseItemDrafts, PoItemsEditor, type ItemDraft } from "./po-items-editor";
 import { TableCell, TableHeadCell, VirtualTable } from "./virtual-table";
@@ -12,17 +13,20 @@ export default function PurchaseDesk({
   onBack,
   focusId,
   onOpenProject,
+  onOpenVendor,
   onEdit,
   onNew,
 }: {
   onBack: () => void;
   focusId?: string | null;
   onOpenProject?: (project: string) => void;
+  onOpenVendor?: (vendor: string) => void;
   onEdit: (id: number) => void;
   onNew: () => void;
 }) {
   const [rows, setRows] = useState<PurchasePo[] | null>(null);
   const [pays, setPays] = useState<PurchasePayment[]>([]);
+  const [vouchers, setVouchers] = useState<VoucherListRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [card, setCard] = useState<PurchasePo | null>(null);
   const [lines, setLines] = useState<ItemDraft[]>([]);
@@ -31,9 +35,14 @@ export default function PurchaseDesk({
 
   const reload = useCallback(async () => {
     try {
-      const [list, paymentRows] = await Promise.all([listPurchasePo(), listPurchasePayments()]);
+      const [list, paymentRows, voucherRows] = await Promise.all([
+        listPurchasePo(),
+        listPurchasePayments(),
+        loadVoucherList(),
+      ]);
       setRows(list);
       setPays(paymentRows);
+      setVouchers(voucherRows);
       setError(null);
     } catch (err) {
       setError(invokeErrorMessage(err));
@@ -106,11 +115,19 @@ export default function PurchaseDesk({
   }, [rows, job]);
 
   if (card) {
-    const billPays = pays.filter((p) => p.poNumber.toLowerCase() === card.poNumber.toLowerCase());
+    const billPays = pays
+      .filter((p) => p.poNumber.toLowerCase() === card.poNumber.toLowerCase())
+      .slice()
+      .sort((a, b) => a.payNumber.localeCompare(b.payNumber));
+    const jobKey = card.project.trim().toLowerCase();
+    const relatedVouchers = jobKey
+      ? vouchers.filter((row) => row.project.trim().toLowerCase() === jobKey)
+      : [];
+    const due = card.totalValue - (card.paidRupees ?? 0);
     return (
       <ModuleFrame
         title={card.poNumber || "Purchase bill"}
-        hint="Lines belong on this bill. Add, change or delete a row, then Save."
+        hint="This bill only. Lines and payments belong here."
         onBack={() => setCard(null)}
         error={error}
         actions={
@@ -122,14 +139,23 @@ export default function PurchaseDesk({
           </div>
         }
       >
-        <dl className="grid gap-3 text-sm sm:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Count label="Lines" value={String(lines.filter((row) => row.description.trim()).length || lines.length)} />
+          <Count label="Payments" value={String(billPays.length)} />
+          <Count label="Still to pay" value={formatRupees(due)} />
+        </div>
+        <dl className="mt-6 grid gap-3 text-sm sm:grid-cols-2">
           <Fact
             label="Project"
             value={card.project}
             onOpen={card.project && onOpenProject ? () => onOpenProject(card.project) : undefined}
           />
-          <Fact label="Vendor" value={card.vendor} />
-          <Fact label="Type" value={card.type === "simple" ? "Simple" : "Contract"} />
+          <Fact
+            label="Vendor"
+            value={card.vendor}
+            onOpen={card.vendor && onOpenVendor ? () => onOpenVendor(card.vendor) : undefined}
+          />
+          <Fact label="Type" value={card.type === "simple" ? "Project expenses" : "Techsol purchase"} />
           <Fact label="Status" value={card.payStatus || "Unpaid"} />
           <Fact label="Value" value={formatRupees(card.totalValue)} />
           <Fact label="Paid" value={formatRupees(card.paidRupees ?? 0)} />
@@ -143,10 +169,28 @@ export default function PurchaseDesk({
             <p className="mt-2 text-sm text-ink-muted">No payment on this bill yet.</p>
           ) : (
             <ul className="mt-2 divide-y divide-line rounded-lg bg-paper-raised ring-1 ring-line">
-              {billPays.map((p) => (
+              {billPays.map((p, i) => (
                 <li key={p.payNumber} className="flex justify-between px-3 py-2 text-sm">
-                  <span>{p.payNumber}</span>
+                  <span>
+                    {p.payNumber}
+                    <span className="ml-2 text-ink-muted">{paymentOrdinal(i + 1)}</span>
+                  </span>
                   <span className="tabular-nums">{formatRupees(p.amountRupees)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <div className="mt-6">
+          <p className="text-xs uppercase tracking-wide text-ink-subtle">Vouchers on this job</p>
+          {relatedVouchers.length === 0 ? (
+            <p className="mt-2 text-sm text-ink-muted">No voucher on this job yet.</p>
+          ) : (
+            <ul className="mt-2 divide-y divide-line rounded-lg bg-paper-raised ring-1 ring-line">
+              {relatedVouchers.map((row) => (
+                <li key={row.voucherNumber} className="flex justify-between px-3 py-2 text-sm">
+                  <span>{row.voucherNumber}</span>
+                  <span className="text-ink-muted">{row.vendor}</span>
                 </li>
               ))}
             </ul>
@@ -195,6 +239,15 @@ export default function PurchaseDesk({
         />
       </div>
     </ModuleFrame>
+  );
+}
+
+function Count({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg bg-paper-raised p-4 ring-1 ring-line">
+      <p className="text-xs text-ink-subtle">{label}</p>
+      <p className="money-figure mt-1 text-2xl">{value}</p>
+    </div>
   );
 }
 
