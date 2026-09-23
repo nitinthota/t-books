@@ -34,6 +34,7 @@ pub use control::{
     DuplicateSerial, DuplicatesReport, RuleRow, EXPLORER_TABLES,
 };
 pub use core::business_rules;
+pub use core::pipeline;
 pub use db::{data_dir, db_path, open_at, open_db, open_memory, LocalBooks};
 pub use hive::{
     hive_conflict_message, is_live_dummy_key, list_dirty_keys, list_pending, submit_hive_row,
@@ -94,7 +95,7 @@ pub const OFFLINE_BANNER: &str =
     "Offline — working on this PC. Access list and Refresh paused.";
 pub const CREDENTIALS_BANNER: &str = "Google credentials not found. Running offline.";
 pub const MIN_PASSWORD_LENGTH: usize = 8;
-pub const SCHEMA_VERSION: &str = "11";
+pub const SCHEMA_VERSION: &str = "12";
 pub const LOOPBOOK_LOGIC_VERSION: &str = business_rules::LOOPBOOK_LOGIC_VERSION;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
