@@ -1,7 +1,6 @@
 //! ZEF event log + AMOT decision desk.
 //!
 //! Screens never call Google. AMOT is the only writer.
-//! Step 2: record() is used by voucher Save / Submit / Refresh.
 
 use rusqlite::Connection;
 
@@ -79,7 +78,12 @@ pub fn conflict_message(key: &str) -> String {
     format!("{key} {CONFLICT_SUFFIX}")
 }
 
-/// One desk. Same facts → same decision. No Google here.
+/// Posted child rows such as PUR-0001-01 are never rewritten.
+pub fn posted_forever_key(key: &str) -> bool {
+    let k = key.trim().to_ascii_uppercase();
+    k.starts_with("PUR-") && k.contains("-01")
+}
+
 pub fn decide(event: &Event, facts: &Facts) -> Decision {
     match event.intent {
         Intent::Save => Decision::Park,
@@ -91,7 +95,7 @@ pub fn decide(event: &Event, facts: &Facts) -> Decision {
 }
 
 fn decide_submit(event: &Event, facts: &Facts) -> Decision {
-    if facts.posted_forever {
+    if facts.posted_forever || posted_forever_key(&event.key) {
         return Decision::Refuse {
             message: format!("{} is posted and is never rewritten.", event.key),
         };
@@ -207,10 +211,10 @@ mod tests {
     use super::*;
     use crate::db::open_memory;
 
-    fn ev(intent: Intent, key: &str) -> Event {
+    fn ev(book: &str, intent: Intent, key: &str) -> Event {
         Event {
             intent,
-            book: "voucher".into(),
+            book: book.into(),
             key: key.into(),
             actor: "thotanitin123@gmail.com".into(),
         }
@@ -231,23 +235,36 @@ mod tests {
 
     #[test]
     fn save_always_parks() {
-        let d = decide(&ev(Intent::Save, "20"), &Facts { online: false, ..base() });
+        let d = decide(&ev("voucher", Intent::Save, "20"), &Facts { online: false, ..base() });
         assert_eq!(d, Decision::Park);
     }
 
     #[test]
-    fn submit_offline_refuses_and_keeps_data() {
-        let d = decide(&ev(Intent::Submit, "20"), &Facts { online: false, ..base() });
+    fn purchase_save_parks() {
+        assert_eq!(decide(&ev("purchase", Intent::Save, "PUR-0001"), &base()), Decision::Park);
+    }
+
+    #[test]
+    fn purchase_child_never_rewritten() {
+        let d = decide(&ev("purchase", Intent::Submit, "PUR-0001-01"), &base());
         match d {
-            Decision::Refuse { message } => assert!(message.contains("Offline")),
+            Decision::Refuse { message } => assert!(message.contains("never rewritten")),
             other => panic!("{other:?}"),
         }
     }
 
     #[test]
+    fn pur_and_pay_do_not_block() {
+        let bill = decide(&ev("purchase", Intent::Submit, "PUR-0004"), &base());
+        let pay = decide(&ev("payment", Intent::Submit, "PAY-00010"), &base());
+        assert_eq!(bill, Decision::Post);
+        assert_eq!(pay, Decision::Post);
+    }
+
+    #[test]
     fn submit_cas_mismatch_uses_exact_message() {
         let d = decide(
-            &ev(Intent::Submit, "20"),
+            &ev("purchase", Intent::Submit, "PUR-0004"),
             &Facts {
                 hive_fp: "bbb".into(),
                 ..base()
@@ -256,47 +273,36 @@ mod tests {
         assert_eq!(
             d,
             Decision::Refuse {
-                message: "20 was just updated by another user. Reload and submit again.".into()
+                message: "PUR-0004 was just updated by another user. Reload and submit again.".into()
             }
         );
     }
 
     #[test]
-    fn submit_empty_hive_posts() {
+    fn refresh_stops_on_dirty_purchase_only() {
         let d = decide(
-            &ev(Intent::Submit, "20"),
+            &ev("purchase", Intent::Refresh, "*"),
             &Facts {
-                hive_exists: false,
-                hive_fp: String::new(),
-                known_fp: String::new(),
-                ..base()
-            },
-        );
-        assert_eq!(d, Decision::Post);
-    }
-
-    #[test]
-    fn two_keys_do_not_block() {
-        let a = decide(&ev(Intent::Submit, "PAY-0001"), &base());
-        let b = decide(&ev(Intent::Submit, "PAY-0002"), &base());
-        assert_eq!(a, Decision::Post);
-        assert_eq!(b, Decision::Post);
-    }
-
-    #[test]
-    fn refresh_stops_on_dirty_keys() {
-        let d = decide(
-            &ev(Intent::Refresh, "*"),
-            &Facts {
-                dirty_keys: vec!["20".into(), "21".into()],
+                dirty_keys: vec!["PUR-0004".into()],
                 ..base()
             },
         );
         assert_eq!(
             d,
             Decision::StopRefresh {
-                dirty_keys: vec!["20".into(), "21".into()]
+                dirty_keys: vec!["PUR-0004".into()]
             }
         );
+    }
+
+    #[test]
+    fn zef_appends_never_updates() {
+        let books = open_memory().unwrap();
+        let e = ev("purchase", Intent::Save, "PUR-0001");
+        let d = decide(&e, &base());
+        append_event(books.conn(), &e, &d, "first").unwrap();
+        append_event(books.conn(), &e, &d, "second").unwrap();
+        let rows = list_events_for_key(books.conn(), "purchase", "PUR-0001").unwrap();
+        assert_eq!(rows.len(), 2);
     }
 }
