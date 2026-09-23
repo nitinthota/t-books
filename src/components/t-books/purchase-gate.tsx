@@ -6,10 +6,12 @@ export default function PurchaseGate({
   onBack,
   focusId,
   onOpenProject,
+  onOpenVendor,
 }: {
   onBack: () => void;
   focusId?: string | null;
   onOpenProject?: (project: string) => void;
+  onOpenVendor?: (vendor: string) => void;
 }) {
   const [editId, setEditId] = useState<string | null>(null);
   const onEdit = useCallback((id: number) => setEditId(String(id)), []);
@@ -27,6 +29,7 @@ export default function PurchaseGate({
       onBack={onBack}
       focusId={focusId}
       onOpenProject={onOpenProject}
+      onOpenVendor={onOpenVendor}
       onEdit={onEdit}
       onNew={onNew}
     />
