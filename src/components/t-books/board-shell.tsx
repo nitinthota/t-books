@@ -113,6 +113,9 @@ function BoardShellInner() {
                 onOpenProject={(project) =>
                   go("projects", { kind: "project", id: project, title: project, subtitle: "" })
                 }
+                onOpenVendor={(vendor) =>
+                  go("vendors", { kind: "vendor", id: vendor, title: vendor, subtitle: "" })
+                }
               />
             ) : active === "hr" ? (
               <HrScreen onBack={() => go("board")} />
