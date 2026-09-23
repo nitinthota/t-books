@@ -1,7 +1,7 @@
 //! ZEF event log + AMOT decision desk.
 //!
 //! Screens never call Google. AMOT is the only writer.
-//! Step 1: pure decide() + local append-only log. No screen rewire yet.
+//! Step 2: record() is used by voucher Save / Submit / Refresh.
 
 use rusqlite::Connection;
 
@@ -183,6 +183,25 @@ pub fn list_events_for_key(conn: &Connection, book: &str, key: &str) -> Result<V
         out.push(row?);
     }
     Ok(out)
+}
+
+pub fn record(
+    conn: &Connection,
+    intent: Intent,
+    book: &str,
+    key: &str,
+    facts: &Facts,
+    actor: &str,
+) -> Result<Decision> {
+    let event = Event {
+        intent,
+        book: book.to_string(),
+        key: key.to_string(),
+        actor: actor.to_string(),
+    };
+    let decision = decide(&event, facts);
+    append_event(conn, &event, &decision, decision.as_str())?;
+    Ok(decision)
 }
 
 #[cfg(test)]
