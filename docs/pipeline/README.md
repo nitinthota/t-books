@@ -17,5 +17,7 @@ This folder is the source of truth for the read/write mind.
 |---|---|---|---|
 | 2026-09-24 | [2026-09-24-event-log-mind.md](2026-09-24-event-log-mind.md) | ZEF / AMOT / JEF event-log mind | PROPOSED |
 | 2026-09-23 | [2026-09-23-step-1-amot-decide.md](2026-09-23-step-1-amot-decide.md) | Step 1: decide() + zef_events table | IN PROGRESS |
-| 2026-09-23 | [2026-09-23-step-2-voucher-gate.md](2026-09-23-step-2-voucher-gate.md) | Step 2: voucher Save/Submit/Refresh through decide() | IN PROGRESS |
-| 2026-09-23 | [2026-09-23-step-3-purchase-module.md](2026-09-23-step-3-purchase-module.md) | Step 3: Purchase module + drill-through | IN PROGRESS |
+| 2026-09-23 | [2026-09-23-step-2-voucher-gate.md](2026-09-23-step-2-voucher-gate.md) | Step 2: voucher Save/Submit/Refresh | IN PROGRESS |
+| 2026-09-23 | [2026-09-23-step-3-purchase-module.md](2026-09-23-step-3-purchase-module.md) | Step 3: Purchase module | IN PROGRESS |
+| 2026-09-23 | [2026-09-23-step-4-sales-module.md](2026-09-23-step-4-sales-module.md) | Step 4: Sales module | IN PROGRESS |
+| 2026-09-23 | [2026-09-23-step-5-remaining-books.md](2026-09-23-step-5-remaining-books.md) | Step 5: Board, vouchers, jobs, vendors | IN PROGRESS |
