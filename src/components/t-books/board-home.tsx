@@ -6,10 +6,20 @@ import { useBooks } from "@/lib/t-books/store";
 import type { DirtyKey, NavId, PurchasePo, SalesPo } from "@/lib/t-books/types";
 import { listDirtyKeys } from "@/lib/t-books/vouchers";
 
+function navForDirty(kind: string): NavId {
+  if (kind === "purchase" || kind === "payment") return "purchase";
+  if (kind === "sales_po") return "sales";
+  if (kind === "salary") return "hr";
+  if (kind === "inventory") return "inventory";
+  if (kind === "logistics") return "logistics";
+  if (kind === "document") return "documents";
+  return "vouchers";
+}
+
 export const BoardHome = memo(function BoardHome({
   onOpen,
 }: {
-  onOpen: (nav: NavId) => void;
+  onOpen: (nav: NavId, key?: string) => void;
 }) {
   const summary = useBooks((s) => s.voucherSummary);
   const lastError = useBooks((s) => s.lastError);
@@ -83,7 +93,7 @@ export const BoardHome = memo(function BoardHome({
           value={String(unsynced)}
           hint={unsynced ? "Parked here" : "Nothing waiting"}
           gold={unsynced > 0}
-          onClick={() => onOpen("vouchers")}
+          onClick={() => onOpen(keys[0] ? navForDirty(keys[0].kind) : "vouchers")}
         />
       </div>
       {keys.length > 0 ? (
@@ -91,8 +101,14 @@ export const BoardHome = memo(function BoardHome({
           <p className="text-xs font-medium uppercase tracking-wide text-ink-subtle">Not posted</p>
           <ul className="mt-2 max-h-40 overflow-auto text-sm">
             {keys.map((k) => (
-              <li key={`${k.kind}-${k.key}`} className="py-1">
-                {k.kind} {k.key}
+              <li key={`${k.kind}-${k.key}`}>
+                <button
+                  type="button"
+                  className="pressable w-full py-1 text-left"
+                  onClick={() => onOpen(navForDirty(k.kind), k.key)}
+                >
+                  {k.kind} {k.key}
+                </button>
               </li>
             ))}
           </ul>
