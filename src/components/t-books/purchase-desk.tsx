@@ -32,7 +32,9 @@ export default function PurchaseDesk({
   const [lines, setLines] = useState<ItemDraft[]>([]);
   const [busy, setBusy] = useState(false);
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<"all" | "due" | "unpaid" | "paid" | "missing_tax" | "contract" | "simple">("all");
+  const [filter, setFilter] = useState<
+    "all" | "due" | "unpaid" | "paid" | "missing_tax" | "not_received" | "dirty" | "contract" | "simple"
+  >("all");
 
   const reload = useCallback(async () => {
     try {
@@ -123,6 +125,8 @@ export default function PurchaseDesk({
       if (filter === "due" && !(dueOf(row) > 0.5)) return false;
       if (filter === "paid" && !(dueOf(row) <= 0.5 && (row.totalValue || 0) > 0.5)) return false;
       if (filter === "missing_tax" && (row.taxInvoiceNo || "").trim()) return false;
+      if (filter === "not_received" && row.goodsReceived) return false;
+      if (filter === "dirty" && !row.isDirty) return false;
       if (filter === "contract" && row.type !== "contract") return false;
       if (filter === "simple" && row.type !== "simple") return false;
       if (!job) return true;
@@ -142,6 +146,8 @@ export default function PurchaseDesk({
       unpaid: list.filter((row) => billState(row) === "unpaid").length,
       paid: list.filter((row) => dueOf(row) <= 0.5 && (row.totalValue || 0) > 0.5).length,
       missing_tax: list.filter((row) => !(row.taxInvoiceNo || "").trim()).length,
+      not_received: list.filter((row) => !row.goodsReceived).length,
+      dirty: list.filter((row) => Boolean(row.isDirty)).length,
       contract: list.filter((row) => row.type === "contract").length,
       simple: list.filter((row) => row.type === "simple").length,
     };
@@ -250,6 +256,8 @@ export default function PurchaseDesk({
             ["unpaid", "No payment", counts.unpaid],
             ["paid", "Settled", counts.paid],
             ["missing_tax", "No tax invoice", counts.missing_tax],
+            ["not_received", "Not received", counts.not_received],
+            ["dirty", "Not posted", counts.dirty],
             ["contract", "Techsol Purchase", counts.contract],
             ["simple", "Project Expenses", counts.simple],
           ] as const
