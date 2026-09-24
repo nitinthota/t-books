@@ -259,6 +259,8 @@ pub fn run() {
             search_office,
             list_projects,
             list_vendors,
+            list_vendor_accounts,
+            save_vendor,
             merge_onto_purchase,
             unmerge_voucher
         ])
