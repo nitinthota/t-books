@@ -2,7 +2,9 @@ import { all, exec, withTransaction } from "./db";
 import { invokeCommand, isTauriRuntime } from "./platform";
 import type { VendorAccount, VendorRef } from "./types";
 
-function text(row: Record<string, unknown>, key: string): string {
+type SqlRow = Record<string, string | number | null>;
+
+function text(row: SqlRow, key: string): string {
   return String(row[key] ?? "").trim();
 }
 
@@ -22,7 +24,7 @@ export function listVendorAccountsLocal(vendor: string): VendorAccount[] {
   ensureAccountsTable();
   const name = vendor.trim();
   if (!name) return [];
-  const existing = all<Record<string, unknown>>(
+  const existing = all<SqlRow>(
     `SELECT id, COALESCE(label,'') AS label, COALESCE(bank,'') AS bank,
             COALESCE(account_number,'') AS account_number, COALESCE(ifsc,'') AS ifsc,
             COALESCE(is_primary,0) AS is_primary
@@ -39,7 +41,7 @@ export function listVendorAccountsLocal(vendor: string): VendorAccount[] {
       isPrimary: Number(row.is_primary ?? 0) !== 0,
     }));
   }
-  const master = all<Record<string, unknown>>(
+  const master = all<SqlRow>(
     `SELECT COALESCE(bank,'') AS bank, COALESCE(account_number,'') AS account_number, COALESCE(ifsc,'') AS ifsc
      FROM vendors WHERE vendor = ? COLLATE NOCASE`,
     [name],
