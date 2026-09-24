@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { listArchive, restoreArchive, type ArchivedRow } from "@/lib/t-books/archive";
 import { bootstrapHiveTab, hiveStatus, type HiveStatus } from "@/lib/t-books/control";
 import { invokeErrorMessage } from "@/lib/t-books/platform";
 import { canOpenAccess } from "@/lib/t-books/rbac";
@@ -25,6 +26,7 @@ export default function SettingsScreen({ onBack }: { onBack: () => void }) {
   const [restorePath, setRestorePath] = useState("");
   const [restoreFile, setRestoreFile] = useState<File | null>(null);
   const [hive, setHive] = useState<HiveStatus | null>(null);
+  const [removed, setRemoved] = useState<ArchivedRow[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   const session = useBooks((s) => s.session);
   const owner = session ? canOpenAccess(session.role) : false;
@@ -33,6 +35,7 @@ export default function SettingsScreen({ onBack }: { onBack: () => void }) {
   const loadLocal = useCallback(async () => {
     try {
       setInfo(await getOpsInfo());
+      setRemoved(await listArchive());
       setError(null);
     } catch (err) {
       setError(invokeErrorMessage(err));
@@ -75,6 +78,19 @@ export default function SettingsScreen({ onBack }: { onBack: () => void }) {
     }
   }
 
+  async function bringBack(row: ArchivedRow) {
+    setBusy(true);
+    try {
+      await restoreArchive(row.id);
+      setToast(`${row.label || row.key} is back.`);
+      await loadLocal();
+    } catch (err) {
+      setError(invokeErrorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function chooseRestore() {
     setBusy(true);
     setError(null);
@@ -103,6 +119,27 @@ export default function SettingsScreen({ onBack }: { onBack: () => void }) {
           <Meta label="Version" value={info?.version ?? "\u2026"} />
           <Meta label="Data folder" value={info?.dataDir ?? "\u2026"} />
         </dl>
+      </section>
+      <section className="mb-8 rounded-lg bg-paper-raised p-4 ring-1 ring-line">
+        <h2 className="text-lg font-medium">Removed</h2>
+        <p className="mt-1 text-sm text-ink-muted">Kept for 30 days. Bring a row back any time before then.</p>
+        {removed.length === 0 ? (
+          <p className="mt-3 text-sm text-ink-muted">Nothing waiting.</p>
+        ) : (
+          <ul className="mt-3 divide-y divide-line">
+            {removed.map((row) => (
+              <li key={row.id} className="flex items-center justify-between gap-3 py-2 text-sm">
+                <span>
+                  <span className="font-medium">{row.label || row.key}</span>
+                  <span className="ml-2 text-ink-muted">{row.daysLeft} days left</span>
+                </span>
+                <Button size="sm" variant="secondary" disabled={busy} onClick={() => void bringBack(row)}>
+                  Bring back
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
       <section className="mb-8 rounded-lg bg-paper-raised p-4 ring-1 ring-line">
         <h2 className="text-lg font-medium">Company book tabs</h2>
