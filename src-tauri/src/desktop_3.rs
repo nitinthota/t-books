@@ -307,7 +307,7 @@ fn submit_office(
     if let crate::core::pipeline::Decision::Refuse { message } = decision {
         return Err(message);
     }
-    crate::office_sync::submit_office(&books, &kind, &key, allow).map_err(map_err)
+    crate::office_submit::submit_office(&books, &kind, &key, allow).map_err(map_err)
 }
 
 #[tauri::command]
