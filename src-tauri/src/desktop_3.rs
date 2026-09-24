@@ -60,8 +60,13 @@ fn save_inventory(
     state: tauri::State<AppState>,
     payload: InventoryRow,
 ) -> std::result::Result<InventoryRow, String> {
-    require_mutate(&state)?;
+    let session = require_mutate(&state)?;
     let books = state.books.lock().expect("local books");
+    let key = match payload.id {
+        Some(id) if id > 0 => format!("INV-{id}"),
+        _ => format!("INV-new-{}", payload.item_name.trim()),
+    };
+    let _ = crate::core::pipeline::park_save(books.conn(), "inventory", &key, &session.email);
     crate::office::save_inventory(&books, payload).map_err(map_err)
 }
 
@@ -78,8 +83,10 @@ fn move_inventory(
     id: i64,
     project: String,
 ) -> std::result::Result<InventoryRow, String> {
-    require_mutate(&state)?;
+    let session = require_mutate(&state)?;
     let books = state.books.lock().expect("local books");
+    let key = format!("INV-{id}");
+    let _ = crate::core::pipeline::park_save(books.conn(), "inventory", &key, &session.email);
     crate::office::move_inventory(&books, id, &project).map_err(map_err)
 }
 
