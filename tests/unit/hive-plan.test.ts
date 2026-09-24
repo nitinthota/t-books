@@ -30,6 +30,15 @@ test("hive-map keeps the raw sheet read-only and off the live voucher tab", () =
   assert.ok(purchase);
   assert.equal(purchase.tab, "Purchase orders");
   assert.equal(purchase.id, "15l8y0e4NRVdI0vFt4DAxNUeTvWnwnZvzvnhoKBGpgEY");
+  const pay = map.workbooks.find((w) => w.kind === "payment");
+  assert.ok(pay);
+  assert.equal(pay.tab, "Purchase payments");
+  const lines = map.workbooks.find((w) => w.kind === "purchase_item");
+  assert.ok(lines);
+  assert.equal(lines.tab, "Purchase lines");
+  const salesLines = map.workbooks.find((w) => w.kind === "sales_item");
+  assert.ok(salesLines);
+  assert.equal(salesLines.tab, "Sales lines");
 });
 
 test("example service account file has no real PEM", () => {
@@ -38,7 +47,7 @@ test("example service account file has no real PEM", () => {
   assert.doesNotMatch(example, /BEGIN PRIVATE KEY/);
 });
 
-test("migration log and credentials extra tabs sit on Access workbook", () => {
+test("Access extras and Vendor banks sit on the right workbooks", () => {
   const raw = readFileSync(join(root, "src-tauri/hive-map.json"), "utf8");
   const map = JSON.parse(raw) as {
     extraTabs: Array<{ workbookKey: string; tab: string; kind: string }>;
@@ -50,9 +59,9 @@ test("migration log and credentials extra tabs sit on Access workbook", () => {
   const creds = map.extraTabs.find((t) => t.kind === "credentials");
   assert.ok(creds);
   assert.equal(creds.tab, "Credentials");
-  const pay = map.extraTabs.find((t) => t.kind === "payment");
-  assert.ok(pay);
-  assert.equal(pay.tab, "Purchase payments");
-  assert.equal(pay.workbookKey, "purchase_orders");
+  const banks = map.extraTabs.find((t) => t.kind === "vendor_bank");
+  assert.ok(banks);
+  assert.equal(banks.tab, "Vendor banks");
+  assert.equal(banks.workbookKey, "vendors");
   assert.equal(map.extraTabs.some((t) => t.tab === "Purchase" && t.kind === "purchase"), false);
 });
