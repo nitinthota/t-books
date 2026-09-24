@@ -5,7 +5,7 @@ import { listPurchasePo, listSalesPo } from "@/lib/t-books/office";
 import { invokeCommand, isTauriRuntime } from "@/lib/t-books/platform";
 import { useBooks } from "@/lib/t-books/store";
 import type { DirtyKey, NavId, PurchasePo, SalesPo } from "@/lib/t-books/types";
-import { listDirtyKeys } from "@/lib/t-books/vouchers";
+import { discardAllDirty, discardDirtyKey, listDirtyKeys } from "@/lib/t-books/vouchers";
 
 function navForDirty(kind: string): NavId {
   if (kind === "purchase" || kind === "payment") return "purchase";
@@ -67,6 +67,45 @@ export const BoardHome = memo(function BoardHome({
       setHits(out.hits);
     } finally {
       setLooking(false);
+    }
+  }
+
+  async function reloadKeys() {
+    try {
+      const list = isTauriRuntime()
+        ? await invokeCommand<DirtyKey[]>("get_dirty_keys")
+        : listDirtyKeys();
+      setKeys(list);
+    } catch {
+      /* keep last */
+    }
+  }
+
+  async function dropOne(row: DirtyKey) {
+    if (!window.confirm(`Remove ${row.kind} ${row.key} from this PC?`)) return;
+    try {
+      if (isTauriRuntime()) {
+        await invokeCommand("discard_dirty_key", { kind: row.kind, key: row.key });
+      } else {
+        discardDirtyKey(row.kind, row.key);
+      }
+      await reloadKeys();
+    } catch {
+      /* leave the list */
+    }
+  }
+
+  async function dropAll() {
+    if (!window.confirm("Remove every not-posted draft from this PC?")) return;
+    try {
+      if (isTauriRuntime()) {
+        await invokeCommand("discard_all_dirty");
+      } else {
+        discardAllDirty();
+      }
+      await reloadKeys();
+    } catch {
+      /* leave the list */
     }
   }
 
@@ -170,16 +209,33 @@ export const BoardHome = memo(function BoardHome({
       </div>
       {keys.length > 0 ? (
         <div className="mt-6 rounded-lg bg-paper-raised p-4 ring-1 ring-line">
-          <p className="text-xs font-medium uppercase tracking-wide text-ink-subtle">Not posted</p>
-          <ul className="mt-2 max-h-40 overflow-auto text-sm">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs font-medium uppercase tracking-wide text-ink-subtle">Not posted</p>
+            <button
+              type="button"
+              className="pressable rounded-md px-3 py-1 text-xs text-ink-muted ring-1 ring-line"
+              onClick={() => void dropAll()}
+            >
+              Remove all
+            </button>
+          </div>
+          <p className="mt-1 text-xs text-ink-subtle">On this PC only. Google is not changed.</p>
+          <ul className="mt-2 max-h-48 overflow-auto text-sm">
             {keys.map((k) => (
-              <li key={`${k.kind}-${k.key}`}>
+              <li key={`${k.kind}-${k.key}`} className="flex items-center gap-2">
                 <button
                   type="button"
-                  className="pressable w-full py-1 text-left"
+                  className="pressable min-w-0 flex-1 py-1 text-left"
                   onClick={() => onOpen(navForDirty(k.kind), k.key)}
                 >
                   {k.kind} {k.key}
+                </button>
+                <button
+                  type="button"
+                  className="pressable shrink-0 rounded-md px-2 py-1 text-xs text-ink-muted ring-1 ring-line"
+                  onClick={() => void dropOne(k)}
+                >
+                  Remove
                 </button>
               </li>
             ))}
