@@ -1,4 +1,4 @@
-# T Books
+# LoopBooks
 
 Offline-first Windows ERP for a small office. Each person installs their own copy. The books live on **this PC**. The UI never calls Google — Refresh and Submit are manual, and only when online.
 
@@ -20,7 +20,7 @@ Offline-first Windows ERP for a small office. Each person installs their own cop
 
 ## Setup
 
-Prerequisites: Node 22, Rust 1.77+. **The installer is Windows-only** (NSIS). Build `T-Books-Setup.exe` on Windows 10/11 or from the GitHub Actions `windows-nsis` job. Linux cannot emit that `.exe`.
+Prerequisites: Node 22, Rust 1.77+. **The installer is Windows-only** (NSIS). Build `LoopBooks-Setup.exe` on Windows 10/11 or from the GitHub Actions `windows-nsis` job. Linux cannot emit that `.exe`.
 
 ```bash
 npm install
@@ -40,7 +40,7 @@ cargo test --manifest-path src-tauri/Cargo.toml --lib
 npm run test:books
 ```
 
-Build the installer (`T-Books-Setup.exe`, per-user, Start menu + uninstall):
+Build the installer (`LoopBooks-Setup.exe`, per-user, Start menu + uninstall):
 
 ```bash
 npm run tauri:build
