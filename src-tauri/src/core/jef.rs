@@ -1,7 +1,10 @@
 //! JEF — local picture of the books.
 //! Built from zef_events on this PC. Never calls Google.
 
+use std::collections::BTreeMap;
+
 use rusqlite::Connection;
+use serde::Serialize;
 
 use crate::core::pipeline::ensure_zef_table;
 use crate::Result;
@@ -15,6 +18,35 @@ pub struct JefSlice {
     pub last_decision: String,
     pub last_at: String,
     pub actor: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeskRow<T: Serialize> {
+    #[serde(flatten)]
+    pub row: T,
+    pub desk_intent: String,
+    pub desk_decision: String,
+    pub desk_at: String,
+}
+
+impl<T: Serialize> DeskRow<T> {
+    pub fn attach(row: T, slice: Option<&JefSlice>) -> Self {
+        match slice {
+            Some(s) => Self {
+                row,
+                desk_intent: s.last_intent.clone(),
+                desk_decision: s.last_decision.clone(),
+                desk_at: s.last_at.clone(),
+            },
+            None => Self {
+                row,
+                desk_intent: String::new(),
+                desk_decision: String::new(),
+                desk_at: String::new(),
+            },
+        }
+    }
 }
 
 /// Last event per book + key. Empty book = every book.
@@ -43,6 +75,14 @@ pub fn project_book(conn: &Connection, book: Option<&str>) -> Result<Vec<JefSlic
         out.push(row?);
     }
     Ok(out)
+}
+
+pub fn last_map(conn: &Connection, book: &str) -> Result<BTreeMap<String, JefSlice>> {
+    let mut map = BTreeMap::new();
+    for slice in project_book(conn, Some(book))? {
+        map.insert(slice.key.clone(), slice);
+    }
+    Ok(map)
 }
 
 /// Timeline for one key. Oldest first. Never rewritten.
@@ -93,5 +133,8 @@ mod tests {
         assert_eq!(v[0].actor, "b");
         let line = timeline(books.conn(), "voucher", "20").unwrap();
         assert_eq!(line.len(), 2);
+        let map = last_map(books.conn(), "voucher").unwrap();
+        let desk = DeskRow::attach(("20",), map.get("20"));
+        assert_eq!(desk.desk_decision, "park");
     }
 }
