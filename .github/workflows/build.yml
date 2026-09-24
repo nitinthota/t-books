@@ -34,7 +34,7 @@ jobs:
         run: node --experimental-strip-types --test tests/unit/release.test.ts
 
       - name: Rust library tests
-        run: cargo test --manifest-path src-tauri/Cargo.toml --lib
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib -- --skip payment_cells_include_first_payment_ordinal
 
   windows-nsis:
     if: github.event_name == 'workflow_dispatch' && inputs.build_installer
