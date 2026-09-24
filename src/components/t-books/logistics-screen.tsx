@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -29,6 +29,12 @@ function blank(): Draft {
   return { id: null, project: "", vehicleNumber: "", invoiceNumber: "", startDate: "", reachDate: "" };
 }
 
+function tripState(row: LogisticsRow): "on_road" | "reached" | "planned" {
+  if (row.reachDate.trim()) return "reached";
+  if (row.startDate.trim()) return "on_road";
+  return "planned";
+}
+
 export default function LogisticsScreen({
   onBack,
   focusId,
@@ -46,6 +52,8 @@ export default function LogisticsScreen({
   const [moveId, setMoveId] = useState<number | null>(null);
   const [moveProject, setMoveProject] = useState("");
   const [busy, setBusy] = useState(false);
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<"all" | "on_road" | "reached" | "planned" | "no_job" | "no_invoice">("all");
   const dirty = mode === "edit" && JSON.stringify(draft) !== JSON.stringify(saved);
 
   const reload = useCallback(async () => {
@@ -114,8 +122,8 @@ export default function LogisticsScreen({
   async function onSubmitHive() {
     setBusy(true);
     try {
-      const saved = await persist();
-      const key = `TRIP-${saved.id}`;
+      const savedRow = await persist();
+      const key = `TRIP-${savedRow.id}`;
       const out = await submitOffice("logistics", key);
       if (out.kind === "conflict") setError(out.message);
       else {
@@ -144,6 +152,33 @@ export default function LogisticsScreen({
     }
   }
 
+  const visible = useMemo(() => {
+    const list = rows ?? [];
+    const q = query.trim().toLowerCase();
+    return list.filter((row) => {
+      if (filter === "on_road" && tripState(row) !== "on_road") return false;
+      if (filter === "reached" && tripState(row) !== "reached") return false;
+      if (filter === "planned" && tripState(row) !== "planned") return false;
+      if (filter === "no_job" && row.project.trim()) return false;
+      if (filter === "no_invoice" && row.invoiceNumber.trim()) return false;
+      if (!q) return true;
+      const hay = `${row.vehicleNumber} ${row.project} ${row.invoiceNumber}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [rows, query, filter]);
+
+  const counts = useMemo(() => {
+    const list = rows ?? [];
+    return {
+      all: list.length,
+      on_road: list.filter((row) => tripState(row) === "on_road").length,
+      reached: list.filter((row) => tripState(row) === "reached").length,
+      planned: list.filter((row) => tripState(row) === "planned").length,
+      no_job: list.filter((row) => !row.project.trim()).length,
+      no_invoice: list.filter((row) => !row.invoiceNumber.trim()).length,
+    };
+  }, [rows]);
+
   if (mode === "edit") {
     return (
       <ModuleFrame
@@ -154,7 +189,7 @@ export default function LogisticsScreen({
         actions={
           <div className="flex gap-2">
             <Button variant="secondary" onClick={() => void onSave()} disabled={busy}>
-              {busy ? "Saving…" : "Save"}
+              {busy ? "Saving\u2026" : "Save"}
             </Button>
             <Button onClick={() => void onSubmitHive()} disabled={busy}>
               Submit
@@ -221,7 +256,7 @@ export default function LogisticsScreen({
         error={error}
         actions={
           <Button onClick={() => void onMoveSave()} disabled={busy}>
-            {busy ? "Saving…" : "Move"}
+            {busy ? "Saving\u2026" : "Move"}
           </Button>
         }
       >
@@ -257,13 +292,54 @@ export default function LogisticsScreen({
         </Button>
       }
     >
+      <input
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Vehicle, job, or invoice"
+        aria-label="Search trips"
+        className="mb-3 h-11 w-full max-w-md rounded-md bg-paper-raised px-3 text-sm ring-1 ring-line"
+      />
+      <div className="mb-4 flex flex-wrap gap-2" role="tablist" aria-label="Trip filters">
+        {(
+          [
+            ["all", "All trips", counts.all],
+            ["on_road", "On the road", counts.on_road],
+            ["reached", "Reached", counts.reached],
+            ["planned", "Not started", counts.planned],
+            ["no_job", "No job", counts.no_job],
+            ["no_invoice", "No invoice", counts.no_invoice],
+          ] as const
+        ).map(([id, label, count]) => {
+          const on = filter === id;
+          return (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={on}
+              onClick={() => setFilter(id)}
+              className={
+                on
+                  ? "pressable rounded-md bg-navy px-3 py-1.5 text-xs text-white"
+                  : "pressable rounded-md px-3 py-1.5 text-xs text-ink-muted ring-1 ring-line"
+              }
+            >
+              {label} {count}
+            </button>
+          );
+        })}
+      </div>
       <div className="overflow-hidden rounded-lg bg-paper-raised ring-1 ring-line">
         <VirtualTable
-          rows={rows ?? []}
+          rows={visible}
           rowKey={(row, i) => row.id ?? i}
           empty={
             <p className="text-sm text-ink-muted">
-              {rows === null ? "Opening logistics on this PC…" : "No trips on this PC yet."}
+              {rows === null
+                ? "Opening logistics on this PC\u2026"
+                : query.trim() || filter !== "all"
+                  ? "No trip matches."
+                  : "No trips on this PC yet."}
             </p>
           }
           header={
@@ -279,10 +355,10 @@ export default function LogisticsScreen({
           renderRow={(row) => (
             <tr className="table-row">
               <TableCell>{row.vehicleNumber}</TableCell>
-              <TableCell className="text-ink-muted">{row.project || "—"}</TableCell>
-              <TableCell className="text-ink-muted">{row.invoiceNumber || "—"}</TableCell>
-              <TableCell className="text-ink-muted">{row.startDate || "—"}</TableCell>
-              <TableCell className="text-ink-muted">{row.reachDate || "—"}</TableCell>
+              <TableCell className="text-ink-muted">{row.project || "\u2014"}</TableCell>
+              <TableCell className="text-ink-muted">{row.invoiceNumber || "\u2014"}</TableCell>
+              <TableCell className="text-ink-muted">{row.startDate || "\u2014"}</TableCell>
+              <TableCell className="text-ink-muted">{row.reachDate || "\u2014"}</TableCell>
               <TableCell>
                 <div className="flex justify-end gap-2">
                   <Button size="sm" variant="secondary" onClick={() => openEdit(row)}>
