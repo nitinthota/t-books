@@ -12,6 +12,7 @@ mod masters;
 mod migrate;
 mod office;
 mod office_sync;
+mod office_children;
 mod online;
 mod ops;
 mod passwords;
@@ -84,7 +85,7 @@ pub use vouchers::{
     VoucherSummary, VoucherView,
 };
 
-pub const APP_NAME: &str = "T Books";
+pub const APP_NAME: &str = "LoopBooks";
 pub const APP_VERSION: &str = "1.0.0";
 pub const DATA_FOLDER_NAME: &str = "T-Books";
 pub const DB_FILE_NAME: &str = "tbooks.db";
@@ -94,8 +95,8 @@ pub const ACCESS_TAB: &str = "Access";
 pub const VOUCHER_RAW_TAB: &str = "Voucher_Raw_Data";
 pub const DEFAULT_SPREADSHEET_ID: &str = "1J9ZuNL1uZ7DmqOGIZojuOCMeYp9VnC-SEow6YG86cgE";
 pub const OFFLINE_BANNER: &str =
-    "Offline — working on this PC. Access list and Refresh paused.";
-pub const CREDENTIALS_BANNER: &str = "Google credentials not found. Running offline.";
+    "Offline — working on this computer. Access list and Refresh paused.";
+pub const CREDENTIALS_BANNER: &str = "Company file is not connected. You can still work here.";
 pub const MIN_PASSWORD_LENGTH: usize = 8;
 pub const SCHEMA_VERSION: &str = "11";
 pub const LOOPBOOK_LOGIC_VERSION: &str = business_rules::LOOPBOOK_LOGIC_VERSION;
