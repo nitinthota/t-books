@@ -82,7 +82,7 @@ export const BoardHome = memo(function BoardHome({
   }
 
   async function dropOne(row: DirtyKey) {
-    if (!window.confirm(`Remove ${row.kind} ${row.key} from this PC?`)) return;
+    if (!window.confirm(`Remove unsaved ${row.kind} ${row.key}?`)) return;
     try {
       if (isTauriRuntime()) {
         await invokeCommand("discard_dirty_key", { kind: row.kind, key: row.key });
@@ -96,7 +96,7 @@ export const BoardHome = memo(function BoardHome({
   }
 
   async function dropAll() {
-    if (!window.confirm("Remove every not-posted draft from this PC?")) return;
+    if (!window.confirm("Remove every unsaved draft?")) return;
     try {
       if (isTauriRuntime()) {
         await invokeCommand("discard_all_dirty");
@@ -124,7 +124,7 @@ export const BoardHome = memo(function BoardHome({
   return (
     <div className="mt-8">
       {lastError ? (
-        <p className="mb-4 text-sm text-gold">Refresh failed. Previous figures are kept.</p>
+        <p className="mb-4 text-sm text-gold">Refresh failed. The last figures are kept.</p>
       ) : null}
       <form onSubmit={(e) => void onAsk(e)} className="mb-6">
         <label className="block text-xs uppercase tracking-wide text-ink-subtle" htmlFor="board-ask">
@@ -135,7 +135,7 @@ export const BoardHome = memo(function BoardHome({
             id="board-ask"
             value={askText}
             onChange={(e) => setAskText(e.target.value)}
-            placeholder="How much did we pay Star Engineering?"
+            placeholder="Example: how much is still due to Star Engineering"
             className="h-11 flex-1 rounded-md bg-paper-raised px-3 text-sm ring-1 ring-line"
           />
           <button
@@ -143,7 +143,7 @@ export const BoardHome = memo(function BoardHome({
             className="pressable h-11 rounded-md bg-navy px-4 text-sm text-white"
             disabled={looking}
           >
-            {looking ? "Looking…" : "Look"}
+            {looking ? "Looking\u2026" : "Look"}
           </button>
         </div>
         {ask?.changed ? (
@@ -152,11 +152,11 @@ export const BoardHome = memo(function BoardHome({
           </p>
         ) : (
           <p className="mt-2 text-xs text-ink-subtle">
-            Type a sentence. Spelling is tidied on this PC, then we look in the books. Nothing goes to Google.
+            Ask in plain words. We tidy the spelling, then search your books.
           </p>
         )}
         {hits && hits.length === 0 ? (
-          <p className="mt-3 text-sm text-ink-muted">Nothing on this PC matches that.</p>
+          <p className="mt-3 text-sm text-ink-muted">Nothing in the books matches that.</p>
         ) : null}
         {hits && hits.length > 0 ? (
           <ul className="mt-3 max-h-56 overflow-auto rounded-lg bg-paper-raised ring-1 ring-line">
@@ -197,12 +197,12 @@ export const BoardHome = memo(function BoardHome({
           hint={`${formatRupees(salesBalance)} balance`}
           onClick={() => onOpen("sales")}
         />
-        <Tile label="Jobs" value="Open" hint="Billed, paid, still due" onClick={() => onOpen("projects")} />
-        <Tile label="Vendors" value="Open" hint="Party card and jobs" onClick={() => onOpen("vendors")} />
+        <Tile label="Jobs" value="Open" hint="Billed, paid and still due" onClick={() => onOpen("projects")} />
+        <Tile label="Vendors" value="Open" hint="GST, banks and jobs" onClick={() => onOpen("vendors")} />
         <Tile
           label="Not posted"
           value={String(unsynced)}
-          hint={unsynced ? "Parked here" : "Nothing waiting"}
+          hint={unsynced ? "Unsaved drafts" : "All posted"}
           gold={unsynced > 0}
           onClick={() => onOpen(keys[0] ? navForDirty(keys[0].kind) : "vouchers")}
         />
@@ -219,7 +219,7 @@ export const BoardHome = memo(function BoardHome({
               Remove all
             </button>
           </div>
-          <p className="mt-1 text-xs text-ink-subtle">On this PC only. Google is not changed.</p>
+          <p className="mt-1 text-xs text-ink-subtle">Drafts on this computer only. The company book is not changed.</p>
           <ul className="mt-2 max-h-48 overflow-auto text-sm">
             {keys.map((k) => (
               <li key={`${k.kind}-${k.key}`} className="flex items-center gap-2">
