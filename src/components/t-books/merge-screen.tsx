@@ -27,12 +27,7 @@ export default function MergeScreen({ onBack }: { onBack: () => void }) {
   }, [load]);
 
   return (
-    <ModuleFrame
-      title="Merge"
-      hint="Attach vouchers to a purchase bill. Same vendor. Posted bills are not changed."
-      onBack={onBack}
-      error={error}
-    >
+    <ModuleFrame title="Merge" onBack={onBack} error={error}>
       <MergePane bills={bills} vouchers={vouchers} />
     </ModuleFrame>
   );

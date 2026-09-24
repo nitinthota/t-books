@@ -26,12 +26,7 @@ export default function ExplorerScreen({ onBack }: { onBack: () => void }) {
   const cols = rows[0] ? Object.keys(rows[0]).slice(0, 8) : [];
 
   return (
-    <ModuleFrame
-      title="Explorer"
-      hint="Browse local tables on this PC. Password and token columns stay hidden. Changes still go through the modules."
-      onBack={onBack}
-      error={error}
-    >
+    <ModuleFrame title="Explorer" onBack={onBack} error={error}>
       <div className="mb-4 flex flex-wrap gap-2">
         {EXPLORER_TABLES.map((t) => (
           <button

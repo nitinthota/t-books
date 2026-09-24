@@ -97,7 +97,7 @@ export function SignInScreen() {
           <Monogram />
           <div>
             <p className="text-2xl font-medium leading-tight tracking-tight">{APP_NAME}</p>
-            <p className="text-sm text-ink-muted">The office register, kept on this PC</p>
+            <p className="text-sm text-ink-muted">Office register</p>
           </div>
         </header>
 
@@ -109,9 +109,7 @@ export function SignInScreen() {
             {mode === "setup" ? "Set a password for this PC" : "Sign in"}
           </h1>
           <p className="mt-1 text-sm text-ink-muted">
-            {mode === "setup"
-              ? "First sign-in on this computer. The password is hashed here — never in Google."
-              : "Each person uses their own email on this computer."}
+            {mode === "setup" ? "First sign-in on this computer." : "Use your office email."}
           </p>
 
           <div className="mt-5 space-y-4">
@@ -172,14 +170,10 @@ export function SignInScreen() {
 
           <div className="mt-6">
             <Button type="submit" disabled={busy} className="w-full">
-              {busy ? "Working…" : "Sign In"}
+              {busy ? "Working\u2026" : "Sign In"}
             </Button>
           </div>
         </form>
-
-        <p className="enter enter-delay-2 mt-6 text-center text-xs text-ink-subtle">
-          Local SQLite on this PC. Board never calls Google.
-        </p>
       </main>
     </div>
   );

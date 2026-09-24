@@ -35,12 +35,7 @@ export default function RulesScreen({ onBack }: { onBack: () => void }) {
   }
 
   return (
-    <ModuleFrame
-      title="Rules"
-      hint="When a voucher type posts, ledger, stock, and project effects fire. Disable a rule to stop that effect for new work on this PC."
-      onBack={onBack}
-      error={error}
-    >
+    <ModuleFrame title="Rules" onBack={onBack} error={error}>
       <ul className="divide-y divide-line overflow-hidden rounded-lg bg-paper-raised ring-1 ring-line">
         {rows.map((r) => (
           <li key={r.id} className="flex items-center justify-between gap-3 px-4 py-3">
