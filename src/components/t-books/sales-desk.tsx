@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { formatRupees } from "@/lib/t-books/business_rules";
-import { getSalesPo, listPurchasePo, listSalesPo, saveSalesPo } from "@/lib/t-books/office";
+import { getSalesPo, listPurchasePo, listSalesPo, saveSalesPo, submitOffice } from "@/lib/t-books/office";
 import { invokeErrorMessage } from "@/lib/t-books/platform";
 import type { PurchasePo, SalesPo } from "@/lib/t-books/types";
+import { DeskSearch } from "./desk-search";
 import { ModuleFrame } from "./module-frame";
 import {
   draftsFromItems,
@@ -72,27 +73,53 @@ export default function SalesDesk({
     }
   }
 
+  async function writeLines() {
+    if (!card) return null;
+    const items = parseItemDrafts(lines);
+    const saved = await saveSalesPo({
+      id: card.id,
+      project: card.project,
+      poNumber: card.poNumber,
+      client: card.client,
+      gst: card.gst,
+      items,
+      kind: card.kind === "project" ? "project" : "contract",
+      receivedRupees: card.receivedRupees ?? 0,
+      paymentTermValue: card.paymentTermValue ?? 0,
+      paymentTermUnit: card.paymentTermUnit === "months" ? "months" : "days",
+    });
+    setCard(saved);
+    setLines(draftsFromItems(saved.items ?? []));
+    return saved;
+  }
+
   async function saveLines() {
     if (!card) return;
     setBusy(true);
     try {
-      const items = parseItemDrafts(lines);
-      const saved = await saveSalesPo({
-        id: card.id,
-        project: card.project,
-        poNumber: card.poNumber,
-        client: card.client,
-        gst: card.gst,
-        items,
-        kind: card.kind === "project" ? "project" : "contract",
-        receivedRupees: card.receivedRupees ?? 0,
-        paymentTermValue: card.paymentTermValue ?? 0,
-        paymentTermUnit: card.paymentTermUnit === "months" ? "months" : "days",
-      });
-      setCard(saved);
-      setLines(draftsFromItems(saved.items ?? []));
+      await writeLines();
       await reload();
       setError(null);
+    } catch (err) {
+      setError(invokeErrorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function postOrder() {
+    if (!card) return;
+    setBusy(true);
+    try {
+      const saved = await writeLines();
+      if (!saved) return;
+      const key = `${saved.poNumber.trim()}@${saved.project.trim()}`;
+      const out = await submitOffice("sales_po", key);
+      if (out.kind === "conflict") setError(out.message);
+      else {
+        await reload();
+        setError(null);
+      }
     } catch (err) {
       setError(invokeErrorMessage(err));
     } finally {
@@ -146,15 +173,17 @@ export default function SalesDesk({
     return (
       <ModuleFrame
         title={card.poNumber || "Sales order"}
-        hint="This order only. Lines belong here."
         onBack={() => setCard(null)}
         error={error}
         actions={
           <div className="flex gap-2">
             <Button variant="secondary" onClick={() => void saveLines()} disabled={busy}>
-              {busy ? "Saving\u2026" : "Save lines"}
+              {busy ? "Saving\u2026" : "Save draft"}
             </Button>
-            <Button onClick={() => onEdit(card.id)}>Full edit</Button>
+            <Button onClick={() => void postOrder()} disabled={busy}>
+              Post order
+            </Button>
+            <Button variant="ghost" onClick={() => onEdit(card.id)}>Full edit</Button>
           </div>
         }
       >
@@ -199,7 +228,6 @@ export default function SalesDesk({
   return (
     <ModuleFrame
       title="Sales"
-      hint="Open an order to see every line. Add or delete rows there."
       onBack={onBack}
       error={error}
       actions={
@@ -211,13 +239,7 @@ export default function SalesDesk({
         </div>
       }
     >
-      <input
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="Order, job, client"
-        aria-label="Search sales"
-        className="mb-3 h-11 w-full max-w-md rounded-md bg-paper-raised px-3 text-sm ring-1 ring-line"
-      />
+      <DeskSearch value={query} onChange={setQuery} placeholder="Order, job, client" label="Search sales" />
       <div className="mb-4 flex flex-wrap gap-2" role="tablist" aria-label="Sales filters">
         {(
           [
