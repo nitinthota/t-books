@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -34,9 +34,11 @@ function blank(): Draft {
 export default function InventoryScreen({
   onBack,
   focusId,
+  onOpenProject,
 }: {
   onBack: () => void;
   focusId?: string | null;
+  onOpenProject?: (project: string) => void;
 }) {
   const { requestLeave } = useUnsaved();
   const [rows, setRows] = useState<InventoryRow[] | null>(null);
@@ -59,27 +61,30 @@ export default function InventoryScreen({
       setError(null);
     } catch (err) {
       setError(invokeErrorMessage(err));
-      if (!rows) setRows([]);
+      setRows((prev) => prev ?? []);
     }
-  }, [rows]);
+  }, []);
 
   useEffect(() => {
     void reload();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [reload]);
 
   useEffect(() => {
     const handle = window.setTimeout(() => {
       void reload(query);
     }, 160);
     return () => window.clearTimeout(handle);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query]);
+  }, [query, reload]);
 
   useEffect(() => {
-    if (!focusId || !rows) return;
-    const match = rows.find((row) => String(row.id) === focusId);
-    if (match) openEdit(match);
+    if (!focusId) return;
+    const id = Number(focusId);
+    if (Number.isFinite(id) && id > 0 && rows) {
+      const match = rows.find((row) => row.id === id);
+      if (match) openEdit(match);
+      return;
+    }
+    setQuery(focusId);
   }, [focusId, rows]);
 
   const persist = useCallback(async () => {
@@ -130,8 +135,8 @@ export default function InventoryScreen({
   async function onSubmitHive() {
     setBusy(true);
     try {
-      const saved = await persist();
-      const key = `INV-${saved.id}`;
+      const savedRow = await persist();
+      const key = `INV-${savedRow.id}`;
       const out = await submitOffice("inventory", key);
       if (out.kind === "conflict") setError(out.message);
       else {
@@ -160,10 +165,17 @@ export default function InventoryScreen({
     }
   }
 
+  const visible = rows ?? [];
+  const jobs = useMemo(
+    () => [...new Set(visible.map((row) => row.project.trim()).filter(Boolean))],
+    [visible],
+  );
+  const stockValue = visible.reduce((sum, row) => sum + (row.cost || 0) * (row.quantity || 0), 0);
+
   if (mode === "edit") {
     return (
       <ModuleFrame
-        title={draft.id ? "Edit item" : "New item"}
+        title={draft.id ? draft.itemName || "Edit item" : "New item"}
         hint="Save writes this PC only. Submit sends one hive row when the Inventory tab exists."
         onBack={() => requestLeave(() => setMode("list"))}
         error={error}
@@ -178,6 +190,20 @@ export default function InventoryScreen({
           </div>
         }
       >
+        <dl className="mb-4 grid gap-3 text-sm sm:grid-cols-2">
+          <div>
+            <dt className="text-xs uppercase tracking-wide text-ink-subtle">Project</dt>
+            <dd className="mt-1">
+              {draft.project && onOpenProject ? (
+                <button type="button" className="text-navy hover:underline" onClick={() => onOpenProject(draft.project)}>
+                  {draft.project}
+                </button>
+              ) : (
+                draft.project || "—"
+              )}
+            </dd>
+          </div>
+        </dl>
         <div className="grid gap-4 rounded-lg bg-paper-raised p-5 ring-1 ring-line sm:grid-cols-2">
           <div className="sm:col-span-2">
             <Label htmlFor="inv-name">Item name</Label>
@@ -269,7 +295,7 @@ export default function InventoryScreen({
   return (
     <ModuleFrame
       title="Inventory"
-      hint="Stock on this PC. Refresh from Google does not change these rows."
+      hint="Stock on this PC. Open a job name to see that job."
       onBack={() => requestLeave(onBack)}
       error={error}
       actions={
@@ -285,20 +311,29 @@ export default function InventoryScreen({
         </Button>
       }
     >
+      <div className="mb-4 grid gap-3 sm:grid-cols-3">
+        <Count label="Items" value={String(visible.length)} />
+        <Count label="Jobs" value={String(jobs.length)} />
+        <Count label="Stock value" value={formatRupees(stockValue)} />
+      </div>
       <Input
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        placeholder="Search item or type"
+        placeholder="Item, type, job"
         aria-label="Search inventory"
         className="mb-4 max-w-sm"
       />
       <div className="overflow-hidden rounded-lg bg-paper-raised ring-1 ring-line">
         <VirtualTable
-          rows={rows ?? []}
+          rows={visible}
           rowKey={(row, i) => row.id ?? i}
           empty={
             <p className="text-sm text-ink-muted">
-              {rows === null ? "Opening inventory on this PC…" : "No inventory on this PC yet."}
+              {rows === null
+                ? "Opening inventory on this PC…"
+                : query.trim()
+                  ? "No item matches."
+                  : "No inventory on this PC yet."}
             </p>
           }
           header={
@@ -319,7 +354,19 @@ export default function InventoryScreen({
               <TableCell className="text-ink-muted">{row.size || "—"}</TableCell>
               <TableCell className="text-right tabular-nums">{row.quantity}</TableCell>
               <TableCell className="text-right tabular-nums">{formatRupees(row.cost)}</TableCell>
-              <TableCell className="text-ink-muted">{row.project || "—"}</TableCell>
+              <TableCell>
+                {row.project && onOpenProject ? (
+                  <button
+                    type="button"
+                    className="text-navy hover:underline"
+                    onClick={() => onOpenProject(row.project)}
+                  >
+                    {row.project}
+                  </button>
+                ) : (
+                  <span className="text-ink-muted">{row.project || "—"}</span>
+                )}
+              </TableCell>
               <TableCell>
                 <div className="flex justify-end gap-2">
                   <Button size="sm" variant="secondary" onClick={() => openEdit(row)}>
@@ -364,6 +411,15 @@ export default function InventoryScreen({
         />
       </div>
     </ModuleFrame>
+  );
+}
+
+function Count({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg bg-paper-raised p-4 ring-1 ring-line">
+      <p className="text-xs text-ink-subtle">{label}</p>
+      <p className="money-figure mt-1 text-2xl">{value}</p>
+    </div>
   );
 }
 
