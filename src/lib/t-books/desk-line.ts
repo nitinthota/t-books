@@ -9,18 +9,18 @@ export type DeskBits = {
 
 export function deskLine(row: DeskBits | null | undefined): string | undefined {
   const d = (row?.deskDecision ?? "").trim().toLowerCase();
-  if (d === "park") return "On this PC. Not sent yet.";
-  if (d === "refuse") return "Not sent. Someone else changed this. Reload and submit again.";
-  if (d === "post") return "Sent.";
-  if (d === "stop_refresh") return "Refresh paused. Unsent rows stay on this PC.";
-  if (d === "discard_local") return "This PC now matches the company copy.";
-  if (row?.isDirty) return "On this PC. Not sent yet.";
+  if (d === "park") return "Draft. Not posted.";
+  if (d === "refuse") return "Not posted. Reload and post again.";
+  if (d === "post") return "Posted.";
+  if (d === "stop_refresh") return "Refresh paused. Unposted drafts stay here.";
+  if (d === "discard_local") return "Matches the company copy.";
+  if (row?.isDirty) return "Draft. Not posted.";
   return undefined;
 }
 
 export function deskMark(row: DeskBits | null | undefined): string | undefined {
   const d = (row?.deskDecision ?? "").trim().toLowerCase();
-  if (d === "park" || d === "refuse") return d === "refuse" ? "Not sent" : "On this PC";
-  if (row?.isDirty) return "On this PC";
+  if (d === "park" || d === "refuse") return d === "refuse" ? "Not posted" : "Draft";
+  if (row?.isDirty) return "Draft";
   return undefined;
 }

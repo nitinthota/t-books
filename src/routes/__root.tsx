@@ -13,13 +13,13 @@ export const Route = createRootRoute({
       { name: "theme-color", content: "#f6f1e8" },
       {
         name: "description",
-        content: "T Books — the office register, kept on this PC.",
+        content: "LoopBooks office register.",
       },
     ],
     links: [
       { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },
       { rel: "stylesheet", href: appCss },
-      { rel: "manifest", href: "/__grok/manifest.webmanifest" },
+      { rel: "rel", href: "/__grok/manifest.webmanifest" },
       { rel: "apple-touch-icon", href: "/__grok/icon-180.png" },
     ],
   }),
