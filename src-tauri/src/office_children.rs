@@ -3,7 +3,8 @@
 
 use crate::db::LocalBooks;
 use crate::hive::get_row_rev;
-use crate::hive_plan::{KIND_PURCHASE_ITEM, KIND_SALES_ITEM, KIND_VENDOR, KIND_VENDOR_BANK};
+use crate::hive_plan::{KIND_PURCHASE_ITEM, KIND_SALES_ITEM, KIND_VENDOR};
+const KIND_VENDOR_BANK: &str = "vendor_bank";
 use crate::{BooksError, Result};
 
 pub fn child_cells(books: &LocalBooks, kind: &str, key: &str) -> Result<(Vec<String>, String, i64)> {
@@ -37,8 +38,7 @@ fn load_vendor(books: &LocalBooks, kind_key: &str) -> Result<(Vec<String>, Strin
     let row = books
         .conn()
         .query_row(
-            "SELECT COALESCE(vendor,''), COALESCE(gst,''), COALESCE(bank,''), COALESCE(account_number,''), COALESCE(ifsc,'')
-             FROM vendors WHERE vendor = ?1 COLLATE NOCASE LIMIT 1",
+            "SELECT COALESCE(vendor,''), COALESCE(gst,''), COALESCE(bank,''), COALESCE(account_number,''), COALESCE(ifsc,'')\n             FROM vendors WHERE vendor = ?1 COLLATE NOCASE LIMIT 1",
             rusqlite::params![vendor],
             |r| {
                 Ok((
@@ -61,19 +61,10 @@ fn load_vendor(books: &LocalBooks, kind_key: &str) -> Result<(Vec<String>, Strin
 
 fn extra_vendor_banks(books: &LocalBooks, vendor: &str) -> Result<Vec<(String, String, String, String)>> {
     let _ = books.conn().execute_batch(
-        "CREATE TABLE IF NOT EXISTS vendor_accounts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            vendor TEXT NOT NULL COLLATE NOCASE,
-            label TEXT,
-            bank TEXT,
-            account_number TEXT,
-            ifsc TEXT,
-            is_primary INTEGER NOT NULL DEFAULT 0
-         );",
+        "CREATE TABLE IF NOT EXISTS vendor_accounts (\n            id INTEGER PRIMARY KEY AUTOINCREMENT,\n            vendor TEXT NOT NULL COLLATE NOCASE,\n            label TEXT,\n            bank TEXT,\n            account_number TEXT,\n            ifsc TEXT,\n            is_primary INTEGER NOT NULL DEFAULT 0\n         );",
     );
     let mut stmt = books.conn().prepare(
-        "SELECT COALESCE(label,''), COALESCE(bank,''), COALESCE(account_number,''), COALESCE(ifsc,'')
-         FROM vendor_accounts WHERE vendor = ?1 COLLATE NOCASE AND is_primary = 0 ORDER BY id",
+        "SELECT COALESCE(label,''), COALESCE(bank,''), COALESCE(account_number,''), COALESCE(ifsc,'')\n         FROM vendor_accounts WHERE vendor = ?1 COLLATE NOCASE AND is_primary = 0 ORDER BY id",
     )?;
     let mapped = stmt.query_map(rusqlite::params![vendor.trim()], |r| {
         Ok((
@@ -126,8 +117,7 @@ fn purchase_item_rows(books: &LocalBooks, po: &str) -> Result<Vec<(String, f64, 
         )
         .map_err(|_| BooksError::from(format!("{po} is not on this computer.")))?;
     let mut stmt = books.conn().prepare(
-        "SELECT COALESCE(description,''), COALESCE(qty,0), COALESCE(rate,0), COALESCE(gst_pct,0)
-         FROM purchase_po_items WHERE po_id = ?1 ORDER BY id",
+        "SELECT COALESCE(description,''), COALESCE(qty,0), COALESCE(rate,0), COALESCE(gst_pct,0)\n         FROM purchase_po_items WHERE po_id = ?1 ORDER BY id",
     )?;
     let mapped = stmt.query_map(rusqlite::params![po_id], |r| {
         Ok((
@@ -182,8 +172,7 @@ fn sales_item_rows(books: &LocalBooks, po: &str, project: &str) -> Result<Vec<(S
         )
         .map_err(|_| BooksError::from(format!("{po} is not on this computer.")))?;
     let mut stmt = books.conn().prepare(
-        "SELECT COALESCE(description,''), COALESCE(qty,0), COALESCE(rate,0), COALESCE(gst_pct,0)
-         FROM sales_po_items WHERE po_id = ?1 ORDER BY id",
+        "SELECT COALESCE(description,''), COALESCE(qty,0), COALESCE(rate,0), COALESCE(gst_pct,0)\n         FROM sales_po_items WHERE po_id = ?1 ORDER BY id",
     )?;
     let mapped = stmt.query_map(rusqlite::params![po_id], |r| {
         Ok((
