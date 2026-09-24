@@ -94,7 +94,7 @@ export default function SettingsScreen({ onBack }: { onBack: () => void }) {
   }
 
   return (
-    <ModuleFrame title="System" hint="Signed-in user, backup and restore. Company tabs are checked only when you ask." onBack={onBack} error={error}>
+    <ModuleFrame title="System" onBack={onBack} error={error}>
       <section className="mb-8 rounded-lg bg-paper-raised p-4 ring-1 ring-line">
         <h2 className="text-lg font-medium">Signed-in operator</h2>
         <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
