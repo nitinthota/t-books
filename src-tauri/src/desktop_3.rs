@@ -205,6 +205,25 @@ fn list_vendors(state: tauri::State<AppState>) -> std::result::Result<Vec<crate:
 }
 
 #[tauri::command]
+fn list_vendor_accounts(
+    state: tauri::State<AppState>,
+    vendor: String,
+) -> std::result::Result<Vec<crate::vendor_master::VendorAccount>, String> {
+    let books = state.books.lock().expect("local books");
+    crate::vendor_master::list_accounts(&books, &vendor).map_err(map_err)
+}
+
+#[tauri::command]
+fn save_vendor(
+    state: tauri::State<AppState>,
+    payload: crate::vendor_master::VendorSave,
+) -> std::result::Result<crate::VendorRow, String> {
+    require_mutate(&state)?;
+    let books = state.books.lock().expect("local books");
+    crate::vendor_master::save_vendor(&books, payload).map_err(map_err)
+}
+
+#[tauri::command]
 fn merge_onto_purchase(
     state: tauri::State<AppState>,
     po_number: String,
