@@ -42,7 +42,7 @@ export default function TrialScreen({ onBack }: { onBack: () => void }) {
   return (
     <ModuleFrame
       title="Finance"
-      hint="Year starts 1 April. Pick a year. Only that year is added."
+      hint="The financial year starts on 1 April. Pick a year to see that year only."
       onBack={onBack}
       error={error}
     >
@@ -68,9 +68,9 @@ export default function TrialScreen({ onBack }: { onBack: () => void }) {
         {trial ? (
           <p className={trial.balanced ? "text-sm text-ink-muted" : "text-sm text-gold"}>
             {dayLabel(trial.start)} – {dayLabel(trial.end)}
-            {" · "}
+            {" \u00b7 "}
             {trial.balanced ? "Balanced" : "Does not balance"}
-            {" · "}
+            {" \u00b7 "}
             {formatRupees(trial.totalDebitRupees)} Dr / {formatRupees(trial.totalCreditRupees)} Cr
           </p>
         ) : null}
