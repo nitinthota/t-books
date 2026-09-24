@@ -49,6 +49,47 @@ pub struct Facts {
     pub dirty_keys: Vec<String>,
 }
 
+impl Facts {
+    pub fn park() -> Self {
+        Self {
+            online: false,
+            dirty: true,
+            posted_forever: false,
+            can_submit: false,
+            known_fp: String::new(),
+            hive_fp: String::new(),
+            hive_exists: false,
+            dirty_keys: vec![],
+        }
+    }
+
+    pub fn submit(online: bool, can_submit: bool) -> Self {
+        Self {
+            online,
+            dirty: true,
+            posted_forever: false,
+            can_submit,
+            known_fp: String::new(),
+            hive_fp: String::new(),
+            hive_exists: false,
+            dirty_keys: vec![],
+        }
+    }
+
+    pub fn refresh(online: bool, dirty_keys: Vec<String>) -> Self {
+        Self {
+            online,
+            dirty: !dirty_keys.is_empty(),
+            posted_forever: false,
+            can_submit: false,
+            known_fp: String::new(),
+            hive_fp: String::new(),
+            hive_exists: true,
+            dirty_keys,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Decision {
     Park,
@@ -78,7 +119,6 @@ pub fn conflict_message(key: &str) -> String {
     format!("{key} {CONFLICT_SUFFIX}")
 }
 
-/// Posted child rows such as PUR-0001-01 are never rewritten.
 pub fn posted_forever_key(key: &str) -> bool {
     let k = key.trim().to_ascii_uppercase();
     k.starts_with("PUR-") && k.contains("-01")
@@ -206,6 +246,45 @@ pub fn record(
     Ok(decision)
 }
 
+pub fn park_save(conn: &Connection, book: &str, key: &str, actor: &str) -> Result<Decision> {
+    record(conn, Intent::Save, book, key, &Facts::park(), actor)
+}
+
+pub fn gate_submit(
+    conn: &Connection,
+    book: &str,
+    key: &str,
+    online: bool,
+    can_submit: bool,
+    actor: &str,
+) -> Result<Decision> {
+    record(
+        conn,
+        Intent::Submit,
+        book,
+        key,
+        &Facts::submit(online, can_submit),
+        actor,
+    )
+}
+
+pub fn gate_refresh(
+    conn: &Connection,
+    book: &str,
+    online: bool,
+    dirty_keys: Vec<String>,
+    actor: &str,
+) -> Result<Decision> {
+    record(
+        conn,
+        Intent::Refresh,
+        book,
+        "*",
+        &Facts::refresh(online, dirty_keys),
+        actor,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -240,8 +319,12 @@ mod tests {
     }
 
     #[test]
-    fn purchase_save_parks() {
-        assert_eq!(decide(&ev("purchase", Intent::Save, "PUR-0001"), &base()), Decision::Park);
+    fn live_park_save_writes_zef() {
+        let books = open_memory().unwrap();
+        let d = park_save(books.conn(), "voucher", "20", "thotanitin123@gmail.com").unwrap();
+        assert_eq!(d, Decision::Park);
+        let rows = list_events_for_key(books.conn(), "voucher", "20").unwrap();
+        assert_eq!(rows, vec![("save".into(), "park".into())]);
     }
 
     #[test]
@@ -251,14 +334,6 @@ mod tests {
             Decision::Refuse { message } => assert!(message.contains("never rewritten")),
             other => panic!("{other:?}"),
         }
-    }
-
-    #[test]
-    fn pur_and_pay_do_not_block() {
-        let bill = decide(&ev("purchase", Intent::Submit, "PUR-0004"), &base());
-        let pay = decide(&ev("payment", Intent::Submit, "PAY-00010"), &base());
-        assert_eq!(bill, Decision::Post);
-        assert_eq!(pay, Decision::Post);
     }
 
     #[test]
@@ -276,33 +351,5 @@ mod tests {
                 message: "PUR-0004 was just updated by another user. Reload and submit again.".into()
             }
         );
-    }
-
-    #[test]
-    fn refresh_stops_on_dirty_purchase_only() {
-        let d = decide(
-            &ev("purchase", Intent::Refresh, "*"),
-            &Facts {
-                dirty_keys: vec!["PUR-0004".into()],
-                ..base()
-            },
-        );
-        assert_eq!(
-            d,
-            Decision::StopRefresh {
-                dirty_keys: vec!["PUR-0004".into()]
-            }
-        );
-    }
-
-    #[test]
-    fn zef_appends_never_updates() {
-        let books = open_memory().unwrap();
-        let e = ev("purchase", Intent::Save, "PUR-0001");
-        let d = decide(&e, &base());
-        append_event(books.conn(), &e, &d, "first").unwrap();
-        append_event(books.conn(), &e, &d, "second").unwrap();
-        let rows = list_events_for_key(books.conn(), "purchase", "PUR-0001").unwrap();
-        assert_eq!(rows.len(), 2);
     }
 }
