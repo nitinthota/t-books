@@ -41,15 +41,14 @@ export default function SettingsScreen({ onBack }: { onBack: () => void }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const session = useBooks((s) => s.session);
   const owner = session ? canOpenAccess(session.role) : false;
+  const [hiveBusy, setHiveBusy] = useState(false);
 
-  const load = useCallback(async () => {
+  const loadLocal = useCallback(async () => {
     try {
       setInfo(await getOpsInfo());
       try {
-        setHive(await hiveStatus());
         setPending(await listPendingSubmit());
       } catch {
-        setHive(null);
         setPending([]);
       }
       setError(null);
@@ -58,9 +57,27 @@ export default function SettingsScreen({ onBack }: { onBack: () => void }) {
     }
   }, []);
 
+  const loadHive = useCallback(async () => {
+    setHiveBusy(true);
+    try {
+      const status = await Promise.race([
+        hiveStatus(),
+        new Promise<never>((_, reject) => {
+          window.setTimeout(() => reject(new Error("Company book check timed out. Try again.")), 8000);
+        }),
+      ]);
+      setHive(status);
+    } catch (err) {
+      setHive(null);
+      setError(invokeErrorMessage(err));
+    } finally {
+      setHiveBusy(false);
+    }
+  }, []);
+
   useEffect(() => {
-    void load();
-  }, [load]);
+    void loadLocal();
+  }, [loadLocal]);
 
   async function run(work: () => Promise<string | void>, ok: string) {
     setBusy(true);
@@ -68,7 +85,7 @@ export default function SettingsScreen({ onBack }: { onBack: () => void }) {
     try {
       const result = await work();
       setToast(typeof result === "string" && result ? result : ok);
-      await load();
+      await loadLocal();
     } catch (err) {
       setError(invokeErrorMessage(err));
     } finally {
@@ -95,49 +112,58 @@ export default function SettingsScreen({ onBack }: { onBack: () => void }) {
   }
 
   return (
-    <ModuleFrame title="System" hint="Who is signed in on this PC, hive tabs on Google, and data controls." onBack={onBack} error={error}>
+    <ModuleFrame title="System" hint="Signed-in user, drafts waiting to post, backup and restore. Company tabs are checked only when you ask." onBack={onBack} error={error}>
       <section className="mb-8 rounded-lg bg-paper-raised p-4 ring-1 ring-line">
         <h2 className="text-lg font-medium">Signed-in operator</h2>
         <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
-          <Meta label="Email" value={session?.email ?? "—"} />
-          <Meta label="Role" value={session?.role ?? "—"} />
-          <Meta label="Version" value={info?.version ?? "…"} />
-          <Meta label="Data folder" value={info?.dataDir ?? "…"} />
+          <Meta label="Email" value={session?.email ?? "\u2014"} />
+          <Meta label="Role" value={session?.role ?? "\u2014"} />
+          <Meta label="Version" value={info?.version ?? "\u2026"} />
+          <Meta label="Data folder" value={info?.dataDir ?? "\u2026"} />
         </dl>
       </section>
 
       <section className="mb-8 rounded-lg bg-paper-raised p-4 ring-1 ring-line">
-        <h2 className="text-lg font-medium">Windows hive</h2>
+        <h2 className="text-lg font-medium">Company book tabs</h2>
         <p className="mt-1 text-sm text-ink-muted">
-          Views never call Google. Submit writes one hive row. Owner can create missing tabs (headers only).
+          Opening System does not call Google. Check tabs only when you need to see if a sheet is missing.
         </p>
+        <Button
+          className="mt-3"
+          variant="secondary"
+          disabled={busy || hiveBusy}
+          onClick={() => void loadHive()}
+        >
+          {hiveBusy ? "Checking\u2026" : "Check company tabs"}
+        </Button>
         <p className="mt-2 text-xs text-ink-subtle">
           {hive
             ? hive.online
               ? hive.credentialsFound
-                ? "This PC can reach Google."
-                : "Google credentials not found. Running offline."
-              : "Offline — hive inspect paused."
-            : "Hive status loads on this PC."}
+                ? "This computer can reach Google."
+                : "Google credentials.json is missing."
+              : "Offline. Tabs cannot be inspected."
+            : hiveBusy
+              ? "Checking company tabs\u2026"
+              : "Not checked yet."}
         </p>
-        <ul className="mt-3 divide-y divide-line text-sm">
+        <ul className="mt-3 space-y-2 text-sm">
           {(hive?.tabs ?? []).map((tab) => (
-            <li key={tab.kind} className="flex flex-wrap items-center justify-between gap-2 py-2">
+            <li key={tab.kind} className="flex items-center justify-between gap-2">
               <span>
-                {tab.tab}
-                <span className="ml-2 text-xs text-ink-subtle">
-                  {tab.present ? `${tab.rowCount} rows` : "missing"}
-                  {tab.error ? ` · ${tab.error}` : ""}
+                <span className="font-medium">{tab.tab}</span>
+                <span className="ml-2 text-ink-muted">
+                  {tab.exists ? (tab.writable ? "Ready" : "Read only") : tab.error || "Missing"}
                 </span>
               </span>
-              {owner && !tab.present && tab.writable !== false ? (
+              {owner && !tab.exists && tab.writable ? (
                 <Button
                   size="sm"
                   variant="secondary"
                   disabled={busy}
-                  onClick={() => void run(() => bootstrapHiveTab(tab.kind), `${tab.tab} ready.`)}
+                  onClick={() => void run(() => bootstrapHiveTab(tab.kind), `${tab.tab} tab created.`)}
                 >
-                  Create headers
+                  Create tab
                 </Button>
               ) : null}
             </li>
@@ -145,13 +171,13 @@ export default function SettingsScreen({ onBack }: { onBack: () => void }) {
         </ul>
         {pending.length > 0 ? (
           <div className="mt-4">
-            <p className="text-sm font-medium">Outbox</p>
+            <p className="text-sm font-medium">Waiting to post</p>
             <ul className="mt-2 space-y-2 text-sm">
               {pending.map((row) => (
                 <li key={`${row.kind}:${row.key}`} className="flex items-center justify-between gap-2">
                   <span className="font-mono text-xs">
                     {row.kind} {row.key}
-                    {row.lastError ? ` · ${row.lastError}` : ""}
+                    {row.lastError ? ` \u00b7 ${row.lastError}` : ""}
                   </span>
                   <Button
                     size="sm"
@@ -163,7 +189,7 @@ export default function SettingsScreen({ onBack }: { onBack: () => void }) {
                         if (out.kind === "conflict") {
                           throw new Error(out.message);
                         }
-                      }, "Submitted to Google.")
+                      }, "Posted.")
                     }
                   >
                     Retry
@@ -173,7 +199,7 @@ export default function SettingsScreen({ onBack }: { onBack: () => void }) {
             </ul>
           </div>
         ) : (
-          <p className="mt-3 text-sm text-ink-muted">No pending hive writes on this PC.</p>
+          <p className="mt-3 text-sm text-ink-muted">Nothing waiting to post.</p>
         )}
       </section>
 
@@ -262,8 +288,8 @@ export default function SettingsScreen({ onBack }: { onBack: () => void }) {
 
       {confirm === "restore" ? (
         <Confirm
-          title="Replace the books on this PC?"
-          body="A safety backup of the current file is made first. This cannot be undone except by restoring that safety copy."
+          title="Replace the books on this computer?"
+          body="A safety copy is taken first. Then this computer is replaced from the zip."
           confirmLabel="Restore"
           busy={busy}
           onCancel={() => {
@@ -286,7 +312,7 @@ export default function SettingsScreen({ onBack }: { onBack: () => void }) {
 
       {confirm === "logs" ? (
         <Confirm
-          title="Clear logs on this PC?"
+          title="Clear logs?"
           body="Error and performance logs will be emptied. Books are not touched."
           confirmLabel="Clear logs"
           busy={busy}
@@ -306,7 +332,7 @@ function Meta({ label, value }: { label: string; value: string }) {
   return (
     <div>
       <dt className="text-xs uppercase tracking-wide text-ink-subtle">{label}</dt>
-      <dd className="mt-1 break-all text-ink">{value || "—"}</dd>
+      <dd className="mt-1 break-all text-ink">{value || "\u2014"}</dd>
     </div>
   );
 }
