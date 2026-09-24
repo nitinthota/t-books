@@ -243,6 +243,13 @@
       "tab": "Documents",
       "kind": "document",
       "write": true
+    },
+    {
+      "workbookKey": "vendors",
+      "tab": "Vendor banks",
+      "kind": "vendor_bank",
+      "write": true,
+      "note": "One row per extra bank. Primary bank stays on Vendors."
     }
   ]
 }
