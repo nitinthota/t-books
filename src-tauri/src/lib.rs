@@ -107,8 +107,8 @@ pub const LOOPBOOK_LOGIC_VERSION: &str = business_rules::LOOPBOOK_LOGIC_VERSION;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct Session {
-    pub email: String;
-    pub role: String;
+    pub email: String,
+    pub role: String,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
