@@ -32,6 +32,7 @@ export default function PurchaseDesk({
   const [lines, setLines] = useState<ItemDraft[]>([]);
   const [busy, setBusy] = useState(false);
   const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<"all" | "due" | "unpaid" | "paid" | "missing_tax" | "contract" | "simple">("all");
 
   const reload = useCallback(async () => {
     try {
@@ -102,17 +103,49 @@ export default function PurchaseDesk({
     }
   }
 
+  function dueOf(row: PurchasePo): number {
+    return (row.totalValue || 0) - (row.paidRupees ?? 0);
+  }
+
+  function billState(row: PurchasePo): "unpaid" | "due" | "paid" {
+    const due = dueOf(row);
+    const paid = row.paidRupees ?? 0;
+    if (paid <= 0.5 && due > 0.5) return "unpaid";
+    if (due > 0.5) return "due";
+    return "paid";
+  }
+
   const job = query.trim().toLowerCase();
   const visible = useMemo(() => {
     const list = rows ?? [];
-    if (!job) return list;
-    return list.filter(
-      (row) =>
+    return list.filter((row) => {
+      if (filter === "unpaid" && billState(row) !== "unpaid") return false;
+      if (filter === "due" && !(dueOf(row) > 0.5)) return false;
+      if (filter === "paid" && !(dueOf(row) <= 0.5 && (row.totalValue || 0) > 0.5)) return false;
+      if (filter === "missing_tax" && (row.taxInvoiceNo || "").trim()) return false;
+      if (filter === "contract" && row.type !== "contract") return false;
+      if (filter === "simple" && row.type !== "simple") return false;
+      if (!job) return true;
+      return (
         row.project.toLowerCase().includes(job) ||
         row.vendor.toLowerCase().includes(job) ||
-        row.poNumber.toLowerCase().includes(job),
-    );
-  }, [rows, job]);
+        row.poNumber.toLowerCase().includes(job)
+      );
+    });
+  }, [rows, job, filter]);
+
+  const counts = useMemo(() => {
+    const list = rows ?? [];
+    return {
+      all: list.length,
+      due: list.filter((row) => dueOf(row) > 0.5).length,
+      unpaid: list.filter((row) => billState(row) === "unpaid").length,
+      paid: list.filter((row) => dueOf(row) <= 0.5 && (row.totalValue || 0) > 0.5).length,
+      missing_tax: list.filter((row) => !(row.taxInvoiceNo || "").trim()).length,
+      contract: list.filter((row) => row.type === "contract").length,
+      simple: list.filter((row) => row.type === "simple").length,
+    };
+  }, [rows]);
 
   if (card) {
     const billPays = pays
@@ -133,7 +166,7 @@ export default function PurchaseDesk({
         actions={
           <div className="flex gap-2">
             <Button variant="secondary" onClick={() => void saveLines()} disabled={busy}>
-              {busy ? "Saving…" : "Save lines"}
+              {busy ? "Saving\u2026" : "Save lines"}
             </Button>
             <Button onClick={() => onEdit(card.id)}>Full edit</Button>
           </div>
@@ -207,15 +240,46 @@ export default function PurchaseDesk({
         onChange={(e) => setQuery(e.target.value)}
         placeholder="Bill, job, vendor"
         aria-label="Search purchase"
-        className="mb-4 h-11 w-full max-w-md rounded-md bg-paper-raised px-3 text-sm ring-1 ring-line"
+        className="mb-3 h-11 w-full max-w-md rounded-md bg-paper-raised px-3 text-sm ring-1 ring-line"
       />
+      <div className="mb-4 flex flex-wrap gap-2" role="tablist" aria-label="Purchase filters">
+        {(
+          [
+            ["all", "All bills", counts.all],
+            ["due", "Still to pay", counts.due],
+            ["unpaid", "No payment", counts.unpaid],
+            ["paid", "Settled", counts.paid],
+            ["missing_tax", "No tax invoice", counts.missing_tax],
+            ["contract", "Techsol Purchase", counts.contract],
+            ["simple", "Project Expenses", counts.simple],
+          ] as const
+        ).map(([id, label, count]) => {
+          const on = filter === id;
+          return (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={on}
+              onClick={() => setFilter(id)}
+              className={
+                on
+                  ? "pressable rounded-md bg-navy px-3 py-1.5 text-xs text-white"
+                  : "pressable rounded-md px-3 py-1.5 text-xs text-ink-muted ring-1 ring-line"
+              }
+            >
+              {label} {count}
+            </button>
+          );
+        })}
+      </div>
       <div className="overflow-hidden rounded-lg bg-paper-raised ring-1 ring-line">
         <VirtualTable
           rows={visible}
           rowKey={(row) => row.id}
           empty={
             <p className="text-sm text-ink-muted">
-              {rows === null ? "Opening purchase…" : job ? "No bill matches." : "No purchase bills yet."}
+              {rows === null ? "Opening purchase\u2026" : job || filter !== "all" ? "No bill matches." : "No purchase bills yet."}
             </p>
           }
           header={
@@ -230,8 +294,8 @@ export default function PurchaseDesk({
           renderRow={(row) => (
             <tr className="table-row cursor-pointer" onClick={() => void openCard(row.id)}>
               <TableCell className="font-mono">{row.poNumber}</TableCell>
-              <TableCell className="text-ink-muted">{row.project || "—"}</TableCell>
-              <TableCell className="text-ink-muted">{row.vendor || "—"}</TableCell>
+              <TableCell className="text-ink-muted">{row.project || "\u2014"}</TableCell>
+              <TableCell className="text-ink-muted">{row.vendor || "\u2014"}</TableCell>
               <TableCell className="text-right tabular-nums">{formatRupees(row.totalValue)}</TableCell>
               <TableCell className="text-ink-muted">{row.payStatus || "Unpaid"}</TableCell>
             </tr>
@@ -261,7 +325,7 @@ function Fact({ label, value, onOpen }: { label: string; value: string; onOpen?:
             {value}
           </button>
         ) : (
-          value || "—"
+          value || "\u2014"
         )}
       </dd>
     </div>
