@@ -119,7 +119,11 @@ function BoardShellInner() {
             ) : active === "finance" ? (
               <TrialScreen onBack={() => go("board")} />
             ) : active === "inventory" ? (
-              <InventoryScreen onBack={() => go("board")} focusId={focusId} />
+              <InventoryScreen
+                onBack={() => go("board")}
+                focusId={focusId}
+                onOpenProject={(project) => go("projects", hit("project", project))}
+              />
             ) : active === "logistics" ? (
               <LogisticsScreen onBack={() => go("board")} focusId={focusId} />
             ) : active === "documents" ? (
