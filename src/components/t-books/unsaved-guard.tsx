@@ -53,7 +53,7 @@ export function UnsavedProvider({ children }: { children: ReactNode }) {
       pendingRef.current = null;
       next?.();
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Could not save on this PC.";
+      const message = err instanceof Error ? err.message : "Could not save.";
       setActionError(message);
     } finally {
       setBusy(false);
@@ -91,7 +91,7 @@ export function UnsavedProvider({ children }: { children: ReactNode }) {
               Unsaved changes
             </h2>
             <p className="mt-2 text-sm text-ink-muted">
-              Save them on this PC, discard, or keep editing.
+              Save, discard, or keep editing.
             </p>
             {actionError ? (
               <p className="mt-3 text-sm text-danger-fg" role="alert">
@@ -100,7 +100,7 @@ export function UnsavedProvider({ children }: { children: ReactNode }) {
             ) : null}
             <div className="mt-5 flex flex-col gap-2 sm:flex-row">
               <Button onClick={() => void onSave()} disabled={busy}>
-                {busy ? "Saving…" : "Save and go back"}
+                {busy ? "Saving\u2026" : "Save and go back"}
               </Button>
               <Button variant="secondary" onClick={onDiscard} disabled={busy}>
                 Discard
