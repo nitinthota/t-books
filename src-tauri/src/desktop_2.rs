@@ -260,8 +260,14 @@ fn save_purchase_po(
     state: tauri::State<AppState>,
     payload: PurchasePoSave,
 ) -> std::result::Result<PurchasePo, String> {
-    require_mutate(&state)?;
+    let session = require_mutate(&state)?;
     let mut books = state.books.lock().expect("local books");
+    let key = if payload.po_number.trim().is_empty() {
+        format!("PUR-id-{}", payload.id.unwrap_or(0))
+    } else {
+        payload.po_number.trim().to_string()
+    };
+    let _ = crate::core::pipeline::park_save(books.conn(), "purchase", &key, &session.email);
     crate::office::save_purchase_po(&mut books, payload).map_err(map_err)
 }
 
