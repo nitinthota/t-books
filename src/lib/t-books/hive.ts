@@ -9,6 +9,10 @@ export const KIND_INVENTORY = "inventory";
 export const KIND_LOGISTICS = "logistics";
 export const KIND_DOCUMENT = "document";
 export const KIND_ACCESS = "access";
+export const KIND_VENDOR = "vendor";
+export const KIND_VENDOR_BANK = "vendor_bank";
+export const KIND_PURCHASE_ITEM = "purchase_item";
+export const KIND_SALES_ITEM = "sales_item";
 
 export const HIVE_KINDS = [
   KIND_ACCESS,
@@ -64,6 +68,14 @@ export function tabName(kind: string): string {
       return "Logistics";
     case KIND_DOCUMENT:
       return "Documents";
+    case KIND_VENDOR:
+      return "Vendors";
+    case KIND_VENDOR_BANK:
+      return "Vendor banks";
+    case KIND_PURCHASE_ITEM:
+      return "Purchase lines";
+    case KIND_SALES_ITEM:
+      return "Sales lines";
     default:
       return "Hive";
   }
@@ -89,6 +101,14 @@ export function liveTabName(kind: string): string {
       return "Documents";
     case KIND_ACCESS:
       return "Access";
+    case KIND_VENDOR:
+      return "Vendors";
+    case KIND_VENDOR_BANK:
+      return "Vendor banks";
+    case KIND_PURCHASE_ITEM:
+      return "Purchase lines";
+    case KIND_SALES_ITEM:
+      return "Sales lines";
     default:
       return tabName(kind);
   }
