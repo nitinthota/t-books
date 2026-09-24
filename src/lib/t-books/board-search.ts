@@ -1,6 +1,6 @@
-/** Board ask: tidy English, then look on this PC. No cloud model. */
+/** Board ask: tidy English and party/job names from this PC. */
 
-import { searchOffice } from "./office";
+import { listProjects, listVendors, searchOffice } from "./office";
 import type { NavId, PurchasePo, SalesPo, SearchHit, VoucherListRow } from "./types";
 import { loadVoucherList } from "./vouchers";
 
@@ -68,6 +68,20 @@ const FILLER = new Set([
   "that",
   "from",
   "with",
+  "how",
+  "much",
+  "show",
+  "find",
+  "search",
+  "paid",
+  "pay",
+  "voucher",
+  "vouchers",
+  "purchase",
+  "vendor",
+  "project",
+  "job",
+  "sales",
 ]);
 
 export type BoardAsk = {
@@ -83,19 +97,90 @@ export type BoardHit = {
   subtitle: string;
 };
 
-export function tidyAsk(raw: string): BoardAsk {
+function distance(a: string, b: string): number {
+  const s = a.toLowerCase();
+  const t = b.toLowerCase();
+  const n = s.length;
+  const m = t.length;
+  if (n === 0) return m;
+  if (m === 0) return n;
+  const prev = new Array<number>(m + 1);
+  const cur = new Array<number>(m + 1);
+  for (let j = 0; j <= m; j++) prev[j] = j;
+  for (let i = 1; i <= n; i++) {
+    cur[0] = i;
+    for (let j = 1; j <= m; j++) {
+      const cost = s[i - 1] === t[j - 1] ? 0 : 1;
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost);
+    }
+    for (let j = 0; j <= m; j++) prev[j] = cur[j];
+  }
+  return prev[m];
+}
+
+function closeEnough(typed: string, name: string): boolean {
+  const a = typed.trim().toLowerCase();
+  const b = name.trim().toLowerCase();
+  if (!a || !b) return false;
+  if (a === b || b.includes(a) || a.includes(b)) return a.length >= 3 || b.includes(a);
+  const d = distance(a, b);
+  const cap = b.length <= 8 ? 2 : b.length <= 16 ? 3 : 4;
+  return d <= cap && d / Math.max(b.length, 1) <= 0.34;
+}
+
+function bestName(typed: string, names: string[]): string | null {
+  let win: string | null = null;
+  let best = 99;
+  for (const name of names) {
+    if (!closeEnough(typed, name)) continue;
+    const d = distance(typed, name);
+    if (d < best) {
+      best = d;
+      win = name;
+    }
+  }
+  return win;
+}
+
+function spellWords(raw: string): string {
+  return raw
+    .trim()
+    .replace(/\s+/g, " ")
+    .split(" ")
+    .map((w) => {
+      const bare = w.toLowerCase().replace(/[^a-z0-9@.-]/g, "");
+      const fix = SPELL[bare];
+      if (!fix) return w;
+      if (fix.includes(" ")) return fix;
+      if (w[0] && w[0] === w[0].toUpperCase()) {
+        return fix.charAt(0).toUpperCase() + fix.slice(1);
+      }
+      return fix;
+    })
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function tidyAsk(raw: string, names: string[] = []): BoardAsk {
   const trimmed = raw.trim().replace(/\s+/g, " ");
   if (!trimmed) return { raw, cleaned: "", changed: false };
-  const words = trimmed.split(" ").map((w) => {
-    const bare = w.toLowerCase().replace(/[^a-z0-9@.-]/g, "");
-    return SPELL[bare] ?? w;
-  });
-  let cleaned = words.join(" ").replace(/\s+/g, " ").trim();
-  cleaned = cleaned.replace(/\bhowmuch\b/gi, "how much");
-  cleaned = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
-  if (!/[.?!]$/.test(cleaned)) {
-    /* keep as a look-up, not a forced period */
+  let cleaned = spellWords(trimmed);
+  const words = cleaned.split(" ");
+  for (let len = Math.min(4, words.length); len >= 1; len--) {
+    for (let i = 0; i + len <= words.length; i++) {
+      const slice = words.slice(i, i + len).join(" ");
+      if (len === 1 && FILLER.has(slice.toLowerCase())) continue;
+      if (len === 1 && /^\d+$/.test(slice)) continue;
+      const hit = bestName(slice, names);
+      if (!hit) continue;
+      words.splice(i, len, hit);
+      cleaned = words.join(" ");
+      i += 0;
+      break;
+    }
   }
+  cleaned = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
   return { raw, cleaned, changed: cleaned.toLowerCase() !== trimmed.toLowerCase() };
 }
 
@@ -126,7 +211,17 @@ export async function runBoardSearch(
   bills: PurchasePo[],
   orders: SalesPo[],
 ): Promise<{ ask: BoardAsk; hits: BoardHit[] }> {
-  const ask = tidyAsk(raw);
+  let names: string[] = [];
+  try {
+    const [vendors, projects] = await Promise.all([listVendors(), listProjects()]);
+    names = [
+      ...vendors.map((v) => v.vendor).filter(Boolean),
+      ...projects.filter(Boolean),
+    ];
+  } catch {
+    /* still tidy English */
+  }
+  const ask = tidyAsk(raw, names);
   if (!ask.cleaned) return { ask, hits: [] };
   const pins = needles(ask.cleaned);
   const hits: BoardHit[] = [];
