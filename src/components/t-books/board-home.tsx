@@ -1,12 +1,12 @@
 import { memo, useEffect, useState } from "react";
 import { formatRupees } from "@/lib/t-books/business_rules";
 import { runBoardSearch, type BoardAsk, type BoardHit } from "@/lib/t-books/board-search";
-import { listProjects, listPurchasePo, listSalesPo, listVendors } from "@/lib/t-books/office";
+import { listProjects, listPurchasePo, listSalesPo, listVendors, submitOffice } from "@/lib/t-books/office";
 import { invokeCommand, isTauriRuntime } from "@/lib/t-books/platform";
 import { useBooks } from "@/lib/t-books/store";
 import type { DirtyKey, NavId, PurchasePo, SalesPo } from "@/lib/t-books/types";
 import { discardAllDirty, discardDirtyKey } from "@/lib/t-books/dirty-discard";
-import { listDirtyKeys } from "@/lib/t-books/vouchers";
+import { listDirtyKeys, submitVoucher } from "@/lib/t-books/vouchers";
 
 function navForDirty(kind: string): NavId {
   if (kind === "purchase" || kind === "payment") return "purchase";
@@ -34,6 +34,8 @@ export const BoardHome = memo(function BoardHome({
   const [ask, setAsk] = useState<BoardAsk | null>(null);
   const [hits, setHits] = useState<BoardHit[] | null>(null);
   const [looking, setLooking] = useState(false);
+  const [posting, setPosting] = useState(false);
+  const [postNote, setPostNote] = useState<string | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -113,6 +115,41 @@ export const BoardHome = memo(function BoardHome({
     }
   }
 
+  async function postAll() {
+    if (!keys.length) return;
+    if (!window.confirm(`Post ${keys.length} draft(s) one by one?`)) return;
+    setPosting(true);
+    setPostNote(null);
+    let done = 0;
+    try {
+      for (const row of keys) {
+        if (row.kind === "voucher") {
+          const n = Number(row.key);
+          const out = await submitVoucher(n);
+          if (out.kind === "conflict") {
+            setPostNote(`${row.key} was just updated by another user. Reload and submit again.`);
+            await reloadKeys();
+            return;
+          }
+        } else {
+          const out = await submitOffice(row.kind, row.key);
+          if (out.kind === "conflict") {
+            setPostNote(out.message);
+            await reloadKeys();
+            return;
+          }
+        }
+        done += 1;
+      }
+      setPostNote(done ? `${done} posted.` : "Nothing to post.");
+      await reloadKeys();
+    } catch (err) {
+      setPostNote(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPosting(false);
+    }
+  }
+
   async function dropAll() {
     if (!window.confirm("Remove every unsaved draft?")) return;
     try {
@@ -170,11 +207,15 @@ export const BoardHome = memo(function BoardHome({
         <Tile label="Vendors" value={String(vendorCount)} onClick={() => onOpen("vendors")} />
         <Tile label="Not posted" value={String(unsynced)} hint={unsynced ? "Unsaved drafts" : "All posted"} gold={unsynced > 0} onClick={() => onOpen(keys[0] ? navForDirty(keys[0].kind) : "vouchers")} />
       </div>
+      {postNote ? <p className="mt-4 text-sm text-ink-muted">{postNote}</p> : null}
       {keys.length > 0 ? (
         <div className="mt-6 rounded-lg bg-paper-raised p-4 ring-1 ring-line">
           <div className="flex items-center justify-between gap-3">
             <p className="text-xs font-medium uppercase tracking-wide text-ink-subtle">Not posted</p>
-            <button type="button" className="pressable rounded-md px-3 py-1 text-xs text-ink-muted ring-1 ring-line" onClick={() => void dropAll()}>Remove all</button>
+            <div className="flex gap-2">
+              <button type="button" className="pressable rounded-md bg-navy px-3 py-1 text-xs text-white" disabled={posting} onClick={() => void postAll()}>{posting ? "Posting\u2026" : "Post all"}</button>
+              <button type="button" className="pressable rounded-md px-3 py-1 text-xs text-ink-muted ring-1 ring-line" onClick={() => void dropAll()}>Remove all</button>
+            </div>
           </div>
           <ul className="mt-2 max-h-48 overflow-auto text-sm">
             {keys.map((k) => (
