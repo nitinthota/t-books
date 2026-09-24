@@ -114,3 +114,8 @@ export async function saveVendor(payload: {
   }
   return saveVendorLocal(payload);
 }
+
+export async function submitVendor(vendor: string) {
+  const { submitOffice } = await import("./office");
+  return submitOffice("vendor", vendor.trim());
+}
