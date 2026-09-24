@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { formatRupees, paymentOrdinal } from "@/lib/t-books/business_rules";
-import { getPurchasePo, listPurchasePayments, listPurchasePo, savePurchasePo } from "@/lib/t-books/office";
+import { getPurchasePo, listPurchasePayments, listPurchasePo, savePurchasePo, submitOffice } from "@/lib/t-books/office";
 import { invokeErrorMessage } from "@/lib/t-books/platform";
 import type { PurchasePayment, PurchasePo, VoucherListRow } from "@/lib/t-books/types";
 import { loadVoucherList } from "@/lib/t-books/vouchers";
+import { DeskSearch } from "./desk-search";
 import { ModuleFrame } from "./module-frame";
 import { draftsFromItems, parseItemDrafts, PoItemsEditor, type ItemDraft } from "./po-items-editor";
 import { TableCell, TableHeadCell, VirtualTable } from "./virtual-table";
@@ -78,26 +79,51 @@ export default function PurchaseDesk({
     }
   }
 
+  async function writeLines() {
+    if (!card) return null;
+    const saved = await savePurchasePo({
+      id: card.id,
+      project: card.project,
+      vendor: card.vendor,
+      poNumber: card.poNumber,
+      type: card.type === "simple" ? "simple" : "contract",
+      totalValue: card.totalValue,
+      items: parseItemDrafts(lines),
+      goodsReceived: card.goodsReceived,
+      taxInvoiceNo: card.taxInvoiceNo,
+      taxInvoiceDate: card.taxInvoiceDate,
+    });
+    setCard(saved);
+    setLines(draftsFromItems(saved.items ?? []));
+    return saved;
+  }
+
   async function saveLines() {
     if (!card) return;
     setBusy(true);
     try {
-      const saved = await savePurchasePo({
-        id: card.id,
-        project: card.project,
-        vendor: card.vendor,
-        poNumber: card.poNumber,
-        type: card.type === "simple" ? "simple" : "contract",
-        totalValue: card.totalValue,
-        items: parseItemDrafts(lines),
-        goodsReceived: card.goodsReceived,
-        taxInvoiceNo: card.taxInvoiceNo,
-        taxInvoiceDate: card.taxInvoiceDate,
-      });
-      setCard(saved);
-      setLines(draftsFromItems(saved.items ?? []));
+      await writeLines();
       await reload();
       setError(null);
+    } catch (err) {
+      setError(invokeErrorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function postBill() {
+    if (!card) return;
+    setBusy(true);
+    try {
+      const saved = await writeLines();
+      if (!saved) return;
+      const out = await submitOffice("purchase", saved.poNumber);
+      if (out.kind === "conflict") setError(out.message);
+      else {
+        await reload();
+        setError(null);
+      }
     } catch (err) {
       setError(invokeErrorMessage(err));
     } finally {
@@ -166,15 +192,17 @@ export default function PurchaseDesk({
     return (
       <ModuleFrame
         title={card.poNumber || "Purchase bill"}
-        hint="This bill only. Lines and payments belong here."
         onBack={() => setCard(null)}
         error={error}
         actions={
           <div className="flex gap-2">
             <Button variant="secondary" onClick={() => void saveLines()} disabled={busy}>
-              {busy ? "Saving\u2026" : "Save lines"}
+              {busy ? "Saving\u2026" : "Save draft"}
             </Button>
-            <Button onClick={() => onEdit(card.id)}>Full edit</Button>
+            <Button onClick={() => void postBill()} disabled={busy}>
+              Post bill
+            </Button>
+            <Button variant="ghost" onClick={() => onEdit(card.id)}>Full edit</Button>
           </div>
         }
       >
@@ -240,14 +268,8 @@ export default function PurchaseDesk({
   }
 
   return (
-    <ModuleFrame title="Purchase" hint="Open a bill to see every line. Add or delete rows there." onBack={onBack} error={error} actions={<Button onClick={onNew}>New bill</Button>}>
-      <input
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="Bill, job, vendor"
-        aria-label="Search purchase"
-        className="mb-3 h-11 w-full max-w-md rounded-md bg-paper-raised px-3 text-sm ring-1 ring-line"
-      />
+    <ModuleFrame title="Purchase" onBack={onBack} error={error} actions={<Button onClick={onNew}>New bill</Button>}>
+      <DeskSearch value={query} onChange={setQuery} placeholder="Bill, job, vendor" label="Search purchase" />
       <div className="mb-4 flex flex-wrap gap-2" role="tablist" aria-label="Purchase filters">
         {(
           [
