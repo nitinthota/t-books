@@ -1,3 +1,13 @@
+fn actor_email(state: &tauri::State<AppState>) -> String {
+    state
+        .session
+        .lock()
+        .expect("session")
+        .as_ref()
+        .map(|s| s.email.clone())
+        .unwrap_or_default()
+}
+
 #[tauri::command]
 fn refresh_vouchers(
     state: tauri::State<AppState>,
@@ -12,7 +22,17 @@ fn refresh_vouchers(
             })
             .unwrap_or(false)
     };
+    let actor = actor_email(&state);
     let mut books = state.books.lock().expect("local books");
+    let dirty = crate::hive::list_dirty_keys(&books).unwrap_or_default();
+    let dirty_keys: Vec<String> = dirty.into_iter().map(|k| format!("{}:{}", k.kind, k.key)).collect();
+    let _ = crate::core::pipeline::gate_refresh(
+        books.conn(),
+        "voucher",
+        is_online(),
+        dirty_keys,
+        &actor,
+    );
     match crate::vouchers::refresh_vouchers_with(&mut books, allow_bootstrap) {
         Ok(out) => {
             if matches!(&out, RefreshOutcome::Ok { .. }) {
@@ -32,7 +52,16 @@ fn refresh_vouchers(
 fn force_refresh_vouchers(
     state: tauri::State<AppState>,
 ) -> std::result::Result<RefreshOutcome, String> {
+    let actor = actor_email(&state);
     let mut books = state.books.lock().expect("local books");
+    let _ = crate::core::pipeline::record(
+        books.conn(),
+        crate::core::pipeline::Intent::DiscardLocal,
+        "voucher",
+        "*",
+        &crate::core::pipeline::Facts::refresh(is_online(), vec![]),
+        &actor,
+    );
     match crate::vouchers::force_refresh_vouchers(&mut books) {
         Ok(out) => {
             set_last_error(&state.last_error, None);
@@ -76,8 +105,10 @@ fn save_voucher(
     state: tauri::State<AppState>,
     payload: VoucherSave,
 ) -> std::result::Result<crate::vouchers::VoucherView, String> {
-    require_mutate(&state)?;
+    let session = require_mutate(&state)?;
     let mut books = state.books.lock().expect("local books");
+    let key = payload.voucher_number.to_string();
+    let _ = crate::core::pipeline::park_save(books.conn(), "voucher", &key, &session.email);
     crate::save_voucher(&mut books, payload).map_err(|e| e.to_string())
 }
 
@@ -117,7 +148,20 @@ fn submit_voucher(
     voucher_number: i64,
 ) -> std::result::Result<SubmitOutcome, String> {
     require_submit_role(&state)?;
+    let actor = actor_email(&state);
     let mut books = state.books.lock().expect("local books");
+    let decision = crate::core::pipeline::gate_submit(
+        books.conn(),
+        "voucher",
+        &voucher_number.to_string(),
+        is_online(),
+        true,
+        &actor,
+    )
+    .map_err(|e| e.to_string())?;
+    if let crate::core::pipeline::Decision::Refuse { message } = decision {
+        return Err(message);
+    }
     match crate::submit_voucher(&mut books, voucher_number) {
         Ok(out) => {
             if matches!(&out, SubmitOutcome::Ok { .. }) {
