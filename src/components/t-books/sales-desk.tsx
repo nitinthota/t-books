@@ -33,6 +33,7 @@ export default function SalesDesk({
   const [lines, setLines] = useState<ItemDraft[]>([]);
   const [busy, setBusy] = useState(false);
   const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<"all" | "due" | "unpaid" | "paid" | "contract" | "project" | "dirty">("all");
 
   const reload = useCallback(async () => {
     try {
@@ -99,17 +100,42 @@ export default function SalesDesk({
     }
   }
 
+  function dueOf(row: SalesPo): number {
+    return (row.totalValue || 0) - (row.receivedRupees ?? 0);
+  }
+
   const job = query.trim().toLowerCase();
   const visible = useMemo(() => {
     const list = rows ?? [];
-    if (!job) return list;
-    return list.filter(
-      (row) =>
+    return list.filter((row) => {
+      const kind = String(row.kind || "contract");
+      if (filter === "due" && !(dueOf(row) > 0.5)) return false;
+      if (filter === "unpaid" && !((row.receivedRupees ?? 0) <= 0.5 && (row.totalValue || 0) > 0.5)) return false;
+      if (filter === "paid" && !((row.totalValue || 0) > 0.5 && dueOf(row) <= 0.5)) return false;
+      if (filter === "contract" && kind !== "contract") return false;
+      if (filter === "project" && kind !== "project") return false;
+      if (filter === "dirty" && !row.isDirty) return false;
+      if (!job) return true;
+      return (
         row.project.toLowerCase().includes(job) ||
         row.client.toLowerCase().includes(job) ||
-        row.poNumber.toLowerCase().includes(job),
-    );
-  }, [rows, job]);
+        row.poNumber.toLowerCase().includes(job)
+      );
+    });
+  }, [rows, job, filter]);
+
+  const counts = useMemo(() => {
+    const list = rows ?? [];
+    return {
+      all: list.length,
+      due: list.filter((row) => dueOf(row) > 0.5).length,
+      unpaid: list.filter((row) => (row.receivedRupees ?? 0) <= 0.5 && (row.totalValue || 0) > 0.5).length,
+      paid: list.filter((row) => (row.totalValue || 0) > 0.5 && dueOf(row) <= 0.5).length,
+      contract: list.filter((row) => String(row.kind || "contract") === "contract").length,
+      project: list.filter((row) => String(row.kind || "") === "project").length,
+      dirty: list.filter((row) => Boolean(row.isDirty)).length,
+    };
+  }, [rows]);
 
   if (card) {
     const received = card.receivedRupees ?? 0;
@@ -126,7 +152,7 @@ export default function SalesDesk({
         actions={
           <div className="flex gap-2">
             <Button variant="secondary" onClick={() => void saveLines()} disabled={busy}>
-              {busy ? "Saving…" : "Save lines"}
+              {busy ? "Saving\u2026" : "Save lines"}
             </Button>
             <Button onClick={() => onEdit(card.id)}>Full edit</Button>
           </div>
@@ -190,15 +216,46 @@ export default function SalesDesk({
         onChange={(e) => setQuery(e.target.value)}
         placeholder="Order, job, client"
         aria-label="Search sales"
-        className="mb-4 h-11 w-full max-w-md rounded-md bg-paper-raised px-3 text-sm ring-1 ring-line"
+        className="mb-3 h-11 w-full max-w-md rounded-md bg-paper-raised px-3 text-sm ring-1 ring-line"
       />
+      <div className="mb-4 flex flex-wrap gap-2" role="tablist" aria-label="Sales filters">
+        {(
+          [
+            ["all", "All orders", counts.all],
+            ["due", "Balance due", counts.due],
+            ["unpaid", "No receipt", counts.unpaid],
+            ["paid", "Settled", counts.paid],
+            ["contract", "Contract PO", counts.contract],
+            ["project", "Project PO", counts.project],
+            ["dirty", "Not posted", counts.dirty],
+          ] as const
+        ).map(([id, label, count]) => {
+          const on = filter === id;
+          return (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={on}
+              onClick={() => setFilter(id)}
+              className={
+                on
+                  ? "pressable rounded-md bg-navy px-3 py-1.5 text-xs text-white"
+                  : "pressable rounded-md px-3 py-1.5 text-xs text-ink-muted ring-1 ring-line"
+              }
+            >
+              {label} {count}
+            </button>
+          );
+        })}
+      </div>
       <div className="overflow-hidden rounded-lg bg-paper-raised ring-1 ring-line">
         <VirtualTable
           rows={visible}
           rowKey={(row) => row.id}
           empty={
             <p className="text-sm text-ink-muted">
-              {rows === null ? "Opening sales…" : job ? "No order matches." : "No sales orders yet."}
+              {rows === null ? "Opening sales\u2026" : job || filter !== "all" ? "No order matches." : "No sales orders yet."}
             </p>
           }
           header={
@@ -218,8 +275,8 @@ export default function SalesDesk({
                   {row.poNumber}
                   {row.isDirty ? <span className="ml-2 text-xs text-gold">unsynced</span> : null}
                 </TableCell>
-                <TableCell className="text-ink-muted">{row.project || "—"}</TableCell>
-                <TableCell className="text-ink-muted">{row.client || "—"}</TableCell>
+                <TableCell className="text-ink-muted">{row.project || "\u2014"}</TableCell>
+                <TableCell className="text-ink-muted">{row.client || "\u2014"}</TableCell>
                 <TableCell className="text-right tabular-nums">{formatRupees(row.totalValue)}</TableCell>
                 <TableCell className="text-right tabular-nums">{formatRupees(row.totalValue - received)}</TableCell>
               </tr>
@@ -250,7 +307,7 @@ function Item({ label, value, onOpen }: { label: string; value: string; onOpen?:
             {value}
           </button>
         ) : (
-          value || "—"
+          value || "\u2014"
         )}
       </dd>
     </div>
