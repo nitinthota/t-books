@@ -6,7 +6,7 @@ import { formatBankLabel, formatRupees } from "@/lib/t-books/business_rules";
 import { listPurchasePo, listSalesPo, listVendors } from "@/lib/t-books/office";
 import { invokeErrorMessage } from "@/lib/t-books/platform";
 import type { NavId, VendorAccount, VendorRef } from "@/lib/t-books/types";
-import { listVendorAccounts, saveVendor } from "@/lib/t-books/vendor-master";
+import { listVendorAccounts, saveVendor, submitVendor } from "@/lib/t-books/vendor-master";
 import { loadVoucherList } from "@/lib/t-books/vouchers";
 import { ModuleFrame } from "./module-frame";
 import { TableCell, TableHeadCell, VirtualTable } from "./virtual-table";
@@ -161,7 +161,7 @@ export default function VendorsScreen({
     });
   }, [rows, query, filter]);
 
-  async function onSaveMaster() {
+  async function onSaveDraft() {
     if (!open) return;
     setBusy(true);
     try {
@@ -175,17 +175,40 @@ export default function VendorsScreen({
     }
   }
 
+  async function onPostParty() {
+    if (!open) return;
+    setBusy(true);
+    try {
+      await saveVendor({ vendor: open.vendor, gst, accounts });
+      const out = await submitVendor(open.vendor);
+      if (out.kind === "conflict") {
+        setError(out.message);
+      } else {
+        await reload();
+        setError(null);
+      }
+    } catch (err) {
+      setError(invokeErrorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (open) {
     return (
       <ModuleFrame
         title={open.vendor}
-        hint="Vendor master on this PC. Extra bank accounts stay here. The account marked primary is the hive bank line."
         onBack={() => setOpenName(null)}
         error={error}
         actions={
-          <Button onClick={() => void onSaveMaster()} disabled={busy}>
-            {busy ? "Saving\u2026" : "Save master"}
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => void onSaveDraft()} disabled={busy}>
+              {busy ? "Saving\u2026" : "Save draft"}
+            </Button>
+            <Button onClick={() => void onPostParty()} disabled={busy}>
+              Post party
+            </Button>
+          </div>
         }
       >
         <div className="grid gap-4 rounded-lg bg-paper-raised p-5 ring-1 ring-line sm:grid-cols-2">
@@ -318,7 +341,7 @@ export default function VendorsScreen({
   ];
 
   return (
-    <ModuleFrame title="Vendors" hint="Vendor master. Open a party to edit GST and bank accounts." onBack={onBack} error={error}>
+    <ModuleFrame title="Vendors" onBack={onBack} error={error}>
       <input
         value={query}
         onChange={(e) => setQuery(e.target.value)}
