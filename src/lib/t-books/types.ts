@@ -369,12 +369,22 @@ export type CasOutcome =
   | { kind: "ok"; key: string; fp: string; rev: number }
   | { kind: "conflict"; key: string; message: string };
 
+export type VendorAccount = {
+  id?: number;
+  label: string;
+  bank: string;
+  accountNumber: string;
+  ifsc: string;
+  isPrimary: boolean;
+};
+
 export type VendorRef = {
   vendor: string;
   gst: string;
   bank?: string;
   accountNumber?: string;
   ifsc?: string;
+  accounts?: VendorAccount[];
 };
 
 export type MergeReport = {
