@@ -23,7 +23,7 @@ fn save_hr_person(
 fn delete_hr_person(state: tauri::State<AppState>, id: i64) -> std::result::Result<(), String> {
     require_mutate(&state)?;
     let books = state.books.lock().expect("local books");
-    crate::office::delete_hr_person(&books, id).map_err(map_err)
+    crate::archive::park_simple(&books, "person", "hr_people", id).map_err(map_err)
 }
 
 #[tauri::command]
@@ -54,7 +54,7 @@ fn save_hr_payroll(
 fn delete_hr_payroll(state: tauri::State<AppState>, id: i64) -> std::result::Result<(), String> {
     require_mutate(&state)?;
     let books = state.books.lock().expect("local books");
-    crate::office::delete_hr_payroll(&books, id).map_err(map_err)
+    crate::archive::park_simple(&books, "payroll", "hr_payroll", id).map_err(map_err)
 }
 
 #[tauri::command]
@@ -85,7 +85,7 @@ fn save_inventory(
 fn delete_inventory(state: tauri::State<AppState>, id: i64) -> std::result::Result<(), String> {
     require_mutate(&state)?;
     let books = state.books.lock().expect("local books");
-    crate::office::delete_inventory(&books, id).map_err(map_err)
+    crate::archive::park_simple(&books, "inventory", "inventory", id).map_err(map_err)
 }
 
 #[tauri::command]
@@ -128,7 +128,7 @@ fn save_logistics(
 fn delete_logistics(state: tauri::State<AppState>, id: i64) -> std::result::Result<(), String> {
     require_mutate(&state)?;
     let books = state.books.lock().expect("local books");
-    crate::office::delete_logistics(&books, id).map_err(map_err)
+    crate::archive::park_simple(&books, "logistics", "logistics", id).map_err(map_err)
 }
 
 #[tauri::command]
@@ -171,7 +171,7 @@ fn save_document(
 fn delete_document(state: tauri::State<AppState>, id: i64) -> std::result::Result<(), String> {
     require_mutate(&state)?;
     let books = state.books.lock().expect("local books");
-    crate::office::delete_document(&books, id).map_err(map_err)
+    crate::archive::park_simple(&books, "document", "documents", id).map_err(map_err)
 }
 
 #[tauri::command]
@@ -276,7 +276,7 @@ fn delete_purchase_payment(
 ) -> std::result::Result<(), String> {
     require_mutate(&state)?;
     let books = state.books.lock().expect("local books");
-    crate::office::delete_purchase_payment(&books, id).map_err(map_err)
+    crate::archive::park_payment(&books, id).map_err(map_err)
 }
 
 #[tauri::command]
@@ -314,4 +314,24 @@ fn submit_office(
 fn get_dirty_keys(state: tauri::State<AppState>) -> std::result::Result<Vec<DirtyKey>, String> {
     let books = state.books.lock().expect("local books");
     crate::hive::list_dirty_keys(&books).map_err(map_err)
+}
+
+#[tauri::command]
+fn delete_voucher(state: tauri::State<AppState>, voucher_number: i64) -> std::result::Result<(), String> {
+    require_mutate(&state)?;
+    let books = state.books.lock().expect("local books");
+    crate::archive::park_voucher(&books, voucher_number).map_err(map_err)
+}
+
+#[tauri::command]
+fn list_archive(state: tauri::State<AppState>) -> std::result::Result<Vec<crate::ArchivedRow>, String> {
+    let books = state.books.lock().expect("local books");
+    crate::archive::list_archive(&books).map_err(map_err)
+}
+
+#[tauri::command]
+fn restore_archive(state: tauri::State<AppState>, id: i64) -> std::result::Result<crate::ArchivedRow, String> {
+    require_mutate(&state)?;
+    let books = state.books.lock().expect("local books");
+    crate::archive::restore_archive(&books, id).map_err(map_err)
 }
