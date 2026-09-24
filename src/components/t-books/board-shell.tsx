@@ -84,11 +84,7 @@ function BoardShellInner() {
         ) : (
           <Suspense fallback={<ScreenSkeleton />}>
             {active === "vouchers" ? (
-              <VouchersScreen
-                onBack={() => go("board")}
-                focusId={focusId}
-                onOpen={(nav, key) => go(nav, hit(nav === "vendors" ? "vendor" : "project", key))}
-              />
+              <VouchersScreen onBack={() => go("board")} focusId={focusId} />
             ) : active === "vendors" ? (
               <VendorsScreen
                 onBack={() => go("board")}
