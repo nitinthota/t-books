@@ -35,6 +35,7 @@ fn refresh_vouchers(
     );
     match crate::vouchers::refresh_vouchers_with(&mut books, allow_bootstrap) {
         Ok(out) => {
+            let _ = crate::archive::keep_parked_out(&books);
             if matches!(&out, RefreshOutcome::Ok { .. }) {
                 set_last_error(&state.last_error, None);
             }
@@ -64,6 +65,7 @@ fn force_refresh_vouchers(
     );
     match crate::vouchers::force_refresh_vouchers(&mut books) {
         Ok(out) => {
+            let _ = crate::archive::keep_parked_out(&books);
             set_last_error(&state.last_error, None);
             Ok(out)
         }
@@ -252,7 +254,7 @@ fn save_sales_po(
 fn delete_sales_po(state: tauri::State<AppState>, id: i64) -> std::result::Result<(), String> {
     require_mutate(&state)?;
     let books = state.books.lock().expect("local books");
-    crate::office::delete_sales_po(&books, id).map_err(map_err)
+    crate::archive::park_sales(&books, id).map_err(map_err)
 }
 
 #[tauri::command]
@@ -300,5 +302,5 @@ fn delete_purchase_po(
 ) -> std::result::Result<(), String> {
     require_mutate(&state)?;
     let books = state.books.lock().expect("local books");
-    crate::office::delete_purchase_po(&books, id).map_err(map_err)
+    crate::archive::park_purchase(&books, id).map_err(map_err)
 }
