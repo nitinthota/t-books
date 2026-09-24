@@ -143,6 +143,25 @@ fn retry_pending_submit(
     }
 }
 
+#[tauri::command]
+fn list_jef(
+    state: tauri::State<AppState>,
+    book: Option<String>,
+) -> std::result::Result<Vec<crate::core::jef::JefSlice>, String> {
+    let books = state.books.lock().expect("local books");
+    crate::core::jef::project_book(books.conn(), book.as_deref()).map_err(map_err)
+}
+
+#[tauri::command]
+fn jef_timeline(
+    state: tauri::State<AppState>,
+    book: String,
+    key: String,
+) -> std::result::Result<Vec<crate::core::jef::JefSlice>, String> {
+    let books = state.books.lock().expect("local books");
+    crate::core::jef::timeline(books.conn(), &book, &key).map_err(map_err)
+}
+
 pub fn run() {
     let books = open_db().expect("open T Books SQLite");
     tauri::Builder::default()
@@ -217,6 +236,8 @@ pub fn run() {
             provision_hive,
             migrate_from_raw,
             retry_pending_submit,
+            list_jef,
+            jef_timeline,
             list_hr_people,
             save_hr_person,
             delete_hr_person,
