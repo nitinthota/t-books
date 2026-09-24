@@ -1,5 +1,6 @@
 import { memo, useEffect, useState } from "react";
 import { formatRupees } from "@/lib/t-books/business_rules";
+import { runBoardSearch, type BoardAsk, type BoardHit } from "@/lib/t-books/board-search";
 import { listPurchasePo, listSalesPo } from "@/lib/t-books/office";
 import { invokeCommand, isTauriRuntime } from "@/lib/t-books/platform";
 import { useBooks } from "@/lib/t-books/store";
@@ -26,6 +27,10 @@ export const BoardHome = memo(function BoardHome({
   const [keys, setKeys] = useState<DirtyKey[]>([]);
   const [bills, setBills] = useState<PurchasePo[]>([]);
   const [orders, setOrders] = useState<SalesPo[]>([]);
+  const [askText, setAskText] = useState("");
+  const [ask, setAsk] = useState<BoardAsk | null>(null);
+  const [hits, setHits] = useState<BoardHit[] | null>(null);
+  const [looking, setLooking] = useState(false);
 
   useEffect(() => {
     void (async () => {
@@ -47,6 +52,24 @@ export const BoardHome = memo(function BoardHome({
     })();
   }, [summary, lastError]);
 
+  async function onAsk(event?: { preventDefault(): void }) {
+    event?.preventDefault();
+    const raw = askText.trim();
+    if (!raw) {
+      setAsk(null);
+      setHits(null);
+      return;
+    }
+    setLooking(true);
+    try {
+      const out = await runBoardSearch(raw, bills, orders);
+      setAsk(out.ask);
+      setHits(out.hits);
+    } finally {
+      setLooking(false);
+    }
+  }
+
   const voucherCount = summary?.count ?? 0;
   const voucherDue = summary?.remainingTotal ?? 0;
   const unsynced = keys.length || summary?.dirty || 0;
@@ -64,6 +87,55 @@ export const BoardHome = memo(function BoardHome({
       {lastError ? (
         <p className="mb-4 text-sm text-gold">Refresh failed. Previous figures are kept.</p>
       ) : null}
+      <form onSubmit={(e) => void onAsk(e)} className="mb-6">
+        <label className="block text-xs uppercase tracking-wide text-ink-subtle" htmlFor="board-ask">
+          Ask the books
+        </label>
+        <div className="mt-1.5 flex gap-2">
+          <input
+            id="board-ask"
+            value={askText}
+            onChange={(e) => setAskText(e.target.value)}
+            placeholder="How much did we pay Star Engineering?"
+            className="h-11 flex-1 rounded-md bg-paper-raised px-3 text-sm ring-1 ring-line"
+          />
+          <button
+            type="submit"
+            className="pressable h-11 rounded-md bg-navy px-4 text-sm text-white"
+            disabled={looking}
+          >
+            {looking ? "Looking…" : "Look"}
+          </button>
+        </div>
+        {ask?.changed ? (
+          <p className="mt-2 text-sm text-ink-muted">
+            Reading as: <span className="text-ink">{ask.cleaned}</span>
+          </p>
+        ) : (
+          <p className="mt-2 text-xs text-ink-subtle">
+            Type a sentence. Spelling is tidied on this PC, then we look in the books. Nothing goes to Google.
+          </p>
+        )}
+        {hits && hits.length === 0 ? (
+          <p className="mt-3 text-sm text-ink-muted">Nothing on this PC matches that.</p>
+        ) : null}
+        {hits && hits.length > 0 ? (
+          <ul className="mt-3 max-h-56 overflow-auto rounded-lg bg-paper-raised ring-1 ring-line">
+            {hits.map((hit) => (
+              <li key={`${hit.nav}-${hit.key}`} className="border-b border-line last:border-0">
+                <button
+                  type="button"
+                  className="pressable w-full px-3 py-2 text-left"
+                  onClick={() => onOpen(hit.nav, hit.key)}
+                >
+                  <span className="block text-sm text-ink">{hit.title}</span>
+                  {hit.subtitle ? <span className="block text-xs text-ink-muted">{hit.subtitle}</span> : null}
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </form>
       <p className="text-xs text-ink-subtle">
         {summary?.lastSynced ? `Last refreshed ${summary.lastSynced}` : "Not refreshed yet."}
       </p>
