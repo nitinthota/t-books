@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** Copy the NSIS output to T-Books-Setup.exe without deleting the original. */
+/** Copy the NSIS output to LoopBooks-Setup.exe without deleting the original. */
 import { copyFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,6 +21,6 @@ if (found.toLowerCase().includes("credentials")) {
   console.error("Refusing to copy a credentials-named file as the installer.");
   process.exit(1);
 }
-const dest = join(outDir, "T-Books-Setup.exe");
+const dest = join(outDir, "LoopBooks-Setup.exe");
 copyFileSync(join(nsis, found), dest);
 console.log(dest);

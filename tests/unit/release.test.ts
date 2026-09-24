@@ -25,7 +25,7 @@ test("release plan names every Loopbook module", () => {
   assert.doesNotMatch(plan, /BEGIN PRIVATE KEY/);
 });
 
-test("Windows NSIS packaging is per-user T Books with no updater bundle", () => {
+test("Windows NSIS packaging is per-user LoopBooks with no updater bundle", () => {
   const conf = readFileSync(join(root, "src-tauri/tauri.conf.json"), "utf8");
   const cargo = readFileSync(join(root, "src-tauri/Cargo.toml"), "utf8");
   const hooks = readFileSync(join(root, "src-tauri/windows/hooks.nsh"), "utf8");
@@ -33,12 +33,12 @@ test("Windows NSIS packaging is per-user T Books with no updater bundle", () => 
   const rename = readFileSync(join(root, "scripts/rename-installer.mjs"), "utf8");
   const release = readFileSync(join(root, "docs/RELEASE.md"), "utf8");
   const workflow = readFileSync(join(root, ".github/workflows/build.yml"), "utf8");
-  assert.match(conf, /"productName": "T Books"/);
+  assert.match(conf, /"productName": "LoopBooks"/);
   assert.match(conf, /"mainBinaryName": "t-books"/);
   assert.match(conf, /"targets": \["nsis"\]/);
   assert.match(conf, /"createUpdaterArtifacts": false/);
   assert.match(conf, /"installMode": "currentUser"/);
-  assert.match(conf, /"startMenuFolder": "T Books"/);
+  assert.match(conf, /"startMenuFolder": "LoopBooks"/);
   assert.match(conf, /embedBootstrapper/);
   assert.doesNotMatch(conf, /"resources"/);
   assert.doesNotMatch(conf, /credentials\.json/);
@@ -47,7 +47,7 @@ test("Windows NSIS packaging is per-user T Books with no updater bundle", () => 
   assert.match(hooks, /leave %LOCALAPPDATA%\\T-Books/);
   assert.doesNotMatch(hooks, /RMDir.*T-Books/i);
   assert.match(ignore, /credentials\.json/);
-  assert.match(rename, /T-Books-Setup\.exe/);
+  assert.match(rename, /LoopBooks-Setup\.exe/);
   assert.match(release, /npm run tauri:build/);
   assert.match(release, /cannot.*Windows NSIS/i);
   assert.match(workflow, /windows-latest/);

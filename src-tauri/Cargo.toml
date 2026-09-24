@@ -1,8 +1,8 @@
 [package]
 name = "t-books"
 version = "1.0.0"
-description = "T Books — office register on this PC"
-authors = ["T Books"]
+description = "LoopBooks — office register on this PC"
+authors = ["LoopBooks"]
 edition = "2021"
 rust-version = "1.77"
 default-run = "t-books"
