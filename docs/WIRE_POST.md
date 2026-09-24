@@ -5,6 +5,7 @@
 3. Each PUR line → Purchase lines (key = PUR-n#1).
    Each SAL line → Sales lines (key = PO@job#1).
 
-Parent Post must call related_keys after a good CAS.
-Purchase screen already posts PUR-n. Sales screen already posts PO@job.
-Vendor card needs Post party → submitOffice("vendor", name).
+Parent Post calls related_keys after a good CAS.
+Vendor card: Save draft stays here. Post party writes Vendors then extra banks.
+Purchase Post bill writes PUR-n then Purchase lines.
+Sales Post order writes PO@job then Sales lines.
