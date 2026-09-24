@@ -1,6 +1,6 @@
-export const APP_NAME = "T Books";
+export const APP_NAME = "LoopBooks";
 export const APP_VERSION = "1.0.0";
-export const APP_MONOGRAM = "T";
+export const APP_MONOGRAM = "L";
 
 /** Windows: %LOCALAPPDATA%\\T-Books\\tbooks.db */
 export const DATA_FOLDER_NAME = "T-Books";
