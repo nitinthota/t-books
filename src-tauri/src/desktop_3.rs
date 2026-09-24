@@ -157,8 +157,13 @@ fn save_document(
     state: tauri::State<AppState>,
     payload: DocumentRow,
 ) -> std::result::Result<DocumentRow, String> {
-    require_mutate(&state)?;
+    let session = require_mutate(&state)?;
     let books = state.books.lock().expect("local books");
+    let key = match payload.id {
+        Some(id) if id > 0 => format!("DOC-{id}"),
+        _ => format!("DOC-new-{}", payload.name.trim()),
+    };
+    let _ = crate::core::pipeline::park_save(books.conn(), "document", &key, &session.email);
     crate::office::save_document(&books, payload).map_err(map_err)
 }
 
