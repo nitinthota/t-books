@@ -3,7 +3,8 @@
 
 use crate::db::LocalBooks;
 use crate::hive::get_row_rev;
-use crate::hive_plan::{KIND_PURCHASE_ITEM, KIND_SALES_ITEM, KIND_VENDOR, KIND_VENDOR_BANK};
+use crate::hive_plan::{KIND_PURCHASE_ITEM, KIND_SALES_ITEM, KIND_VENDOR};
+const KIND_VENDOR_BANK: &str = "vendor_bank";
 use crate::{BooksError, Result};
 
 pub fn child_cells(books: &LocalBooks, kind: &str, key: &str) -> Result<(Vec<String>, String, i64)> {
@@ -31,8 +32,8 @@ fn rupees_cell(n: f64) -> String {
     }
 }
 
-fn load_vendor(books: &LocalBooks, key: &str) -> Result<(Vec<String>, String, i64)> {
-    let vendor = key.trim();
+fn load_vendor(books: &LocalBooks, kind_key: &str) -> Result<(Vec<String>, String, i64)> {
+    let vendor = kind_key.trim();
     let row = books
         .conn()
         .query_row(
@@ -49,7 +50,7 @@ fn load_vendor(books: &LocalBooks, key: &str) -> Result<(Vec<String>, String, i6
                 ))
             },
         )
-        .map_err(|_| BooksError::from(format!("{key} is not on this computer.")))?;
+        .map_err(|_| BooksError::from(format!("{kind_key} is not on this computer.")))?;
     let (fp, rev) = get_row_rev(books, KIND_VENDOR, vendor).unwrap_or_else(|_| (String::new(), 0));
     Ok((
         vec![row.0, row.1, row.2, row.3, row.4, String::new(), String::new()],
