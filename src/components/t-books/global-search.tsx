@@ -70,7 +70,7 @@ export function GlobalSearch({
         onFocus={() => {
           if (hits.length || error) setOpen(true);
         }}
-        placeholder="Search vendors, projects…"
+        placeholder="Search"
         aria-label="Search vendors, projects, inventory, logistics"
         className="h-9 w-full rounded-md bg-paper-raised pl-8 pr-3 text-sm text-ink shadow-[0_0_0_1px_var(--color-line)] placeholder:text-ink-subtle focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_var(--color-navy)]"
       />
@@ -81,7 +81,7 @@ export function GlobalSearch({
               {error}
             </p>
           ) : hits.length === 0 ? (
-            <p className="px-3 py-3 text-sm text-ink-muted">No matches on this PC.</p>
+            <p className="px-3 py-3 text-sm text-ink-muted">No matches.</p>
           ) : (
             <ul className="max-h-80 overflow-auto py-1">
               {hits.map((hit) => (

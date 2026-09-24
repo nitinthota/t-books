@@ -83,7 +83,7 @@ export function SignInScreen() {
         setError(result.message);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Sign-in failed on this PC.");
+      setError(err instanceof Error ? err.message : "Sign-in failed.");
     } finally {
       setBusy(false);
     }
@@ -106,11 +106,8 @@ export function SignInScreen() {
           className="enter enter-delay-1 rounded-lg bg-paper-raised p-6 ring-1 ring-line"
         >
           <h1 className="text-xl font-medium tracking-tight">
-            {mode === "setup" ? "Set a password for this PC" : "Sign in"}
+            {mode === "setup" ? "Set a password" : "Sign in"}
           </h1>
-          <p className="mt-1 text-sm text-ink-muted">
-            {mode === "setup" ? "First sign-in on this computer." : "Use your office email."}
-          </p>
 
           <div className="mt-5 space-y-4">
             {error ? <ErrorBanner message={error} /> : null}
