@@ -1,7 +1,7 @@
 import { memo, useEffect, useState } from "react";
 import { formatRupees } from "@/lib/t-books/business_rules";
 import { runBoardSearch, type BoardAsk, type BoardHit } from "@/lib/t-books/board-search";
-import { listPurchasePo, listSalesPo } from "@/lib/t-books/office";
+import { listProjects, listPurchasePo, listSalesPo, listVendors } from "@/lib/t-books/office";
 import { invokeCommand, isTauriRuntime } from "@/lib/t-books/platform";
 import { useBooks } from "@/lib/t-books/store";
 import type { DirtyKey, NavId, PurchasePo, SalesPo } from "@/lib/t-books/types";
@@ -28,6 +28,8 @@ export const BoardHome = memo(function BoardHome({
   const [keys, setKeys] = useState<DirtyKey[]>([]);
   const [bills, setBills] = useState<PurchasePo[]>([]);
   const [orders, setOrders] = useState<SalesPo[]>([]);
+  const [jobCount, setJobCount] = useState(0);
+  const [vendorCount, setVendorCount] = useState(0);
   const [askText, setAskText] = useState("");
   const [ask, setAsk] = useState<BoardAsk | null>(null);
   const [hits, setHits] = useState<BoardHit[] | null>(null);
@@ -44,9 +46,24 @@ export const BoardHome = memo(function BoardHome({
         /* keep last */
       }
       try {
-        const [po, sales] = await Promise.all([listPurchasePo(), listSalesPo()]);
+        const [po, sales, projects, vendors] = await Promise.all([
+          listPurchasePo(),
+          listSalesPo(),
+          listProjects(),
+          listVendors(),
+        ]);
         setBills(po);
         setOrders(sales);
+        const jobs = new Set<string>();
+        for (const name of projects) if (name.trim()) jobs.add(name.trim().toLowerCase());
+        for (const row of po) if (row.project.trim()) jobs.add(row.project.trim().toLowerCase());
+        for (const row of sales) if (row.project.trim()) jobs.add(row.project.trim().toLowerCase());
+        setJobCount(jobs.size);
+        const parties = new Set<string>();
+        for (const row of vendors) if (row.vendor.trim()) parties.add(row.vendor.trim().toLowerCase());
+        for (const row of po) if (row.vendor.trim()) parties.add(row.vendor.trim().toLowerCase());
+        for (const row of sales) if (row.client.trim()) parties.add(row.client.trim().toLowerCase());
+        setVendorCount(parties.size);
       } catch {
         /* board still shows voucher figures */
       }
@@ -149,8 +166,8 @@ export const BoardHome = memo(function BoardHome({
         <Tile label="Vouchers" value={String(voucherCount)} hint={`${formatRupees(voucherDue)} still to pay`} onClick={() => onOpen("vouchers")} />
         <Tile label="Purchase bills" value={String(bills.length)} hint={`${formatRupees(purchaseDue)} unpaid`} onClick={() => onOpen("purchase")} />
         <Tile label="Sales orders" value={String(orders.length)} hint={`${formatRupees(salesBalance)} balance`} onClick={() => onOpen("sales")} />
-        <Tile label="Jobs" value="Open" onClick={() => onOpen("projects")} />
-        <Tile label="Vendors" value="Open" onClick={() => onOpen("vendors")} />
+        <Tile label="Jobs" value={String(jobCount)} onClick={() => onOpen("projects")} />
+        <Tile label="Vendors" value={String(vendorCount)} onClick={() => onOpen("vendors")} />
         <Tile label="Not posted" value={String(unsynced)} hint={unsynced ? "Unsaved drafts" : "All posted"} gold={unsynced > 0} onClick={() => onOpen(keys[0] ? navForDirty(keys[0].kind) : "vouchers")} />
       </div>
       {keys.length > 0 ? (
