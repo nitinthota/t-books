@@ -65,13 +65,26 @@ pub use office::{
     list_purchase_po, list_sales_po, list_vendors, save_document, save_hr_payroll, save_hr_person,
     save_inventory, save_logistics, save_purchase_payment, save_purchase_po, save_sales_po,
     search_office, DocumentRow, HrPerson, InventoryRow, LogisticsRow, PayrollRow, PoItemIn,
-    PoPreview, ProjectRow, PurchasePayment, PurchasePo, SalesPo, VendorMasterRow,
+    PoPreview, PurchasePayment, PurchasePaymentSave, PurchasePo, PurchasePoSave, SalesPo,
+    SalesPoSave, SearchHit, VendorRef,
 };
-pub use passwords::{has_password, set_password, verify_password};
-pub use submit::{conflict_message, submit_voucher, SubmitOutcome};
-pub use trial::{get_trial, TrialBalance, TrialLine};
+pub use office_sync::{
+    bootstrap_hive_tab, hive_status, submit_office, submit_office_with, GoogleOfficeHive, HiveStatus,
+    HiveTabStatus,
+};
+pub use sheets::credentials_exist;
+pub use provision::{migrate_from_raw, provision_hive, ProvisionReport};
+pub use hive_plan::{load_map as load_hive_map, refuse_raw_write, validate_plan, HiveTarget};
+pub use trial::{available_fy, build_trial, TrialBalance, TrialLine};
+pub use passwords::{hash_password, validate_new_password, verify_password};
+pub use submit::{
+    conflict_message, reload_voucher, reload_voucher_with, submit_voucher, submit_voucher_with,
+    MemorySheet, SubmitOutcome,
+};
+pub use voucher_edit::{next_voucher_number, save_voucher, PaymentSave, VoucherSave};
 pub use vouchers::{
-    apply_voucher_rows, force_refresh_vouchers, get_voucher, get_voucher_summary, list_dirty_vouchers, list_vouchers,
+    apply_voucher_rows, apply_voucher_rows_discarding_dirty, dirty_guard, discard_dirty_vouchers,
+    force_refresh_vouchers, get_voucher, get_voucher_summary, list_dirty_vouchers, list_vouchers,
     mark_dirty, parse_voucher_values, refresh_vouchers, ParseReport, RefreshOutcome, VoucherListRow,
     VoucherSummary, VoucherView,
 };
@@ -94,8 +107,8 @@ pub const LOOPBOOK_LOGIC_VERSION: &str = business_rules::LOOPBOOK_LOGIC_VERSION;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct Session {
-    pub email: String,
-    pub role: String,
+    pub email: String;
+    pub role: String;
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
