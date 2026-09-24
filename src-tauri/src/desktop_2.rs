@@ -221,8 +221,16 @@ fn save_sales_po(
     state: tauri::State<AppState>,
     payload: SalesPoSave,
 ) -> std::result::Result<SalesPo, String> {
-    require_mutate(&state)?;
+    let session = require_mutate(&state)?;
     let mut books = state.books.lock().expect("local books");
+    let po = payload.po_number.trim();
+    let job = payload.project.trim();
+    let key = if po.is_empty() {
+        format!("SAL-id-{}", payload.id.unwrap_or(0))
+    } else {
+        format!("{po}@{job}")
+    };
+    let _ = crate::core::pipeline::park_save(books.conn(), "sales", &key, &session.email);
     crate::office::save_sales_po(&mut books, payload).map_err(map_err)
 }
 
