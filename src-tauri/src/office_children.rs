@@ -3,8 +3,7 @@
 
 use crate::db::LocalBooks;
 use crate::hive::get_row_rev;
-use crate::hive_plan::{KIND_PURCHASE_ITEM, KIND_SALES_ITEM, KIND_VENDOR};
-const KIND_VENDOR_BANK: &str = "vendor_bank";
+use crate::hive_plan::{KIND_PURCHASE_ITEM, KIND_SALES_ITEM, KIND_VENDOR, KIND_VENDOR_BANK};
 use crate::{BooksError, Result};
 
 pub fn child_cells(books: &LocalBooks, kind: &str, key: &str) -> Result<(Vec<String>, String, i64)> {
@@ -18,10 +17,11 @@ pub fn child_cells(books: &LocalBooks, kind: &str, key: &str) -> Result<(Vec<Str
 }
 
 pub fn is_child_kind(kind: &str) -> bool {
-    matches!(
-        kind,
-        KIND_VENDOR | KIND_VENDOR_BANK | KIND_PURCHASE_ITEM | KIND_SALES_ITEM
-    )
+    matches!(kind, KIND_VENDOR_BANK | KIND_PURCHASE_ITEM | KIND_SALES_ITEM)
+}
+
+pub fn is_office_child_or_vendor(kind: &str) -> bool {
+    kind == KIND_VENDOR || is_child_kind(kind)
 }
 
 fn rupees_cell(n: f64) -> String {
