@@ -103,8 +103,13 @@ fn save_logistics(
     state: tauri::State<AppState>,
     payload: LogisticsRow,
 ) -> std::result::Result<LogisticsRow, String> {
-    require_mutate(&state)?;
+    let session = require_mutate(&state)?;
     let books = state.books.lock().expect("local books");
+    let key = match payload.id {
+        Some(id) if id > 0 => format!("TRIP-{id}"),
+        _ => format!("TRIP-new-{}", payload.vehicle_number.trim()),
+    };
+    let _ = crate::core::pipeline::park_save(books.conn(), "logistics", &key, &session.email);
     crate::office::save_logistics(&books, payload).map_err(map_err)
 }
 
@@ -121,8 +126,10 @@ fn move_logistics(
     id: i64,
     project: String,
 ) -> std::result::Result<LogisticsRow, String> {
-    require_mutate(&state)?;
+    let session = require_mutate(&state)?;
     let books = state.books.lock().expect("local books");
+    let key = format!("TRIP-{id}");
+    let _ = crate::core::pipeline::park_save(books.conn(), "logistics", &key, &session.email);
     crate::office::move_logistics(&books, id, &project).map_err(map_err)
 }
 
