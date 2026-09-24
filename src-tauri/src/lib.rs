@@ -20,6 +20,7 @@ mod sheets;
 mod submit;
 pub mod testdata;
 mod trial;
+mod vendor_master;
 mod voucher_edit;
 mod vouchers;
 
@@ -47,6 +48,7 @@ pub use log::{
     performance as log_performance, set_log_dir, Level as LogLevel,
 };
 pub use masters::{merge_onto_purchase, unmerge_voucher, MergeReport, VendorRow};
+pub use vendor_master::{list_accounts as list_vendor_accounts, save_vendor, VendorAccount, VendorSave};
 pub use ops::{
     auto_backup, backup_to, check_updates, download_installer, export_logs_zip, is_newer, ops_info,
     parse_latest_release, prune_auto_backups, restore_from, set_auto_backup, store_app_version,
