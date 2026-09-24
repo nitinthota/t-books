@@ -9,8 +9,13 @@ fn save_hr_person(
     state: tauri::State<AppState>,
     payload: HrPerson,
 ) -> std::result::Result<HrPerson, String> {
-    require_mutate(&state)?;
+    let session = require_mutate(&state)?;
     let books = state.books.lock().expect("local books");
+    let key = match payload.id {
+        Some(id) if id > 0 => format!("HR-{id}"),
+        _ => format!("HR-new-{}", payload.name.trim()),
+    };
+    let _ = crate::core::pipeline::park_save(books.conn(), "people", &key, &session.email);
     crate::office::save_hr_person(&books, payload).map_err(map_err)
 }
 
@@ -34,8 +39,14 @@ fn save_hr_payroll(
     state: tauri::State<AppState>,
     payload: PayrollRow,
 ) -> std::result::Result<PayrollRow, String> {
-    require_mutate(&state)?;
+    let session = require_mutate(&state)?;
     let books = state.books.lock().expect("local books");
+    let key = if payload.salary_number.trim().is_empty() {
+        format!("SALARY-id-{}", payload.id.unwrap_or(0))
+    } else {
+        payload.salary_number.trim().to_string()
+    };
+    let _ = crate::core::pipeline::park_save(books.conn(), "salary", &key, &session.email);
     crate::office::save_hr_payroll(&books, payload).map_err(map_err)
 }
 
