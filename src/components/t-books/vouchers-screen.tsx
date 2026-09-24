@@ -7,6 +7,7 @@ import { canMutate, canRefresh } from "@/lib/t-books/rbac";
 import { useBooks } from "@/lib/t-books/store";
 import type { PaymentView, VoucherListRow, VoucherSave, VoucherView } from "@/lib/t-books/types";
 import { loadVoucher, loadVoucherList, reloadVoucher, submitVoucher } from "@/lib/t-books/vouchers";
+import { deskLine, deskMark } from "@/lib/t-books/desk-line";
 import { ModuleFrame } from "./module-frame";
 import { MoneyHero } from "./money-hero";
 import { RefreshToast } from "./refresh-toast";
@@ -200,7 +201,7 @@ export default function VouchersScreen({
     return (
       <ModuleFrame
         title={`Voucher ${open.voucherNumber}`}
-        hint={editing ? "Save writes this PC only (dirty). Submit writes Google." : open.status || undefined}
+        hint={deskLine(open) ?? (editing ? "Save stays on this PC. Submit sends this voucher." : open.status || undefined)}
         onBack={() => {
           setOpen(null);
           setEditing(false);
@@ -288,10 +289,14 @@ export default function VouchersScreen({
             </div>
           </>
         )}
-        <p className="mt-4 text-xs text-ink-subtle">
-          Save = this PC + dirty. Submit writes the bill to Voucher register and each occupied
-          payment as 1st / 2nd / … on Loopbooks — Payments. Max five payments. Column A stays an integer.
-        </p>
+        {deskLine(open) ? (
+          <p className="mt-4 text-sm text-ink">{deskLine(open)}</p>
+        ) : (
+          <p className="mt-4 text-xs text-ink-subtle">
+            Save stays on this PC. Submit sends this bill and each payment as 1st, 2nd, and so on.
+            At most five payments.
+          </p>
+        )}
         {submitState === "success" ? (
           <RefreshToast message={SUBMIT_SUCCESS_TOAST} onDone={() => setSubmitState("idle")} />
         ) : null}
@@ -313,7 +318,7 @@ export default function VouchersScreen({
   return (
     <ModuleFrame
       title="Vouchers"
-      hint="Refresh pulls the archive. Edit/Save stays on this PC. Submit writes Google."
+      hint="Refresh loads the company copy. Save stays on this PC. Submit sends one voucher."
       onBack={onBack}
       error={error}
       actions={
@@ -362,7 +367,11 @@ export default function VouchersScreen({
             >
               <TableCell>
                 <span className="tabular-nums">{row.voucherNumber}</span>
-                {row.isDirty ? <span className="ml-2 text-xs text-gold">unsynced</span> : null}
+                {deskMark(row) ? (
+                  <span className="ml-2 text-xs text-gold">{deskMark(row)}</span>
+                ) : row.isDirty ? (
+                  <span className="ml-2 text-xs text-gold">On this PC</span>
+                ) : null}
               </TableCell>
               <TableCell>{row.vendor || "—"}</TableCell>
               <TableCell className="text-ink-muted">{row.project || "—"}</TableCell>
