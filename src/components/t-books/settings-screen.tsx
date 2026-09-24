@@ -1,28 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import {
-  bootstrapHiveTab,
-  hiveStatus,
-  listPendingSubmit,
-  retryPendingSubmit,
-  type HiveStatus,
-} from "@/lib/t-books/control";
+import { bootstrapHiveTab, hiveStatus, type HiveStatus } from "@/lib/t-books/control";
 import { invokeErrorMessage } from "@/lib/t-books/platform";
 import { canOpenAccess } from "@/lib/t-books/rbac";
 import { useBooks } from "@/lib/t-books/store";
-import type { PendingSubmit } from "@/lib/t-books/types";
 import {
   backupData,
-  checkForUpdates,
   clearLogs,
-  downloadUpdate,
   exportLogs,
   getOpsInfo,
   pickRestoreZip,
   restoreData,
-  setAutoBackup,
   type OpsInfo,
-  type UpdateInfo,
 } from "@/lib/t-books/ops";
 import { ModuleFrame } from "./module-frame";
 import { RefreshToast } from "./refresh-toast";
@@ -35,9 +24,7 @@ export default function SettingsScreen({ onBack }: { onBack: () => void }) {
   const [confirm, setConfirm] = useState<"restore" | "logs" | null>(null);
   const [restorePath, setRestorePath] = useState("");
   const [restoreFile, setRestoreFile] = useState<File | null>(null);
-  const [update, setUpdate] = useState<UpdateInfo | null>(null);
   const [hive, setHive] = useState<HiveStatus | null>(null);
-  const [pending, setPending] = useState<PendingSubmit[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   const session = useBooks((s) => s.session);
   const owner = session ? canOpenAccess(session.role) : false;
@@ -46,11 +33,6 @@ export default function SettingsScreen({ onBack }: { onBack: () => void }) {
   const loadLocal = useCallback(async () => {
     try {
       setInfo(await getOpsInfo());
-      try {
-        setPending(await listPendingSubmit());
-      } catch {
-        setPending([]);
-      }
       setError(null);
     } catch (err) {
       setError(invokeErrorMessage(err));
@@ -112,7 +94,7 @@ export default function SettingsScreen({ onBack }: { onBack: () => void }) {
   }
 
   return (
-    <ModuleFrame title="System" hint="Signed-in user, drafts waiting to post, backup and restore. Company tabs are checked only when you ask." onBack={onBack} error={error}>
+    <ModuleFrame title="System" hint="Signed-in user, backup and restore. Company tabs are checked only when you ask." onBack={onBack} error={error}>
       <section className="mb-8 rounded-lg bg-paper-raised p-4 ring-1 ring-line">
         <h2 className="text-lg font-medium">Signed-in operator</h2>
         <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
@@ -124,13 +106,9 @@ export default function SettingsScreen({ onBack }: { onBack: () => void }) {
       </section>
       <section className="mb-8 rounded-lg bg-paper-raised p-4 ring-1 ring-line">
         <h2 className="text-lg font-medium">Company book tabs</h2>
-        <p className="mt-1 text-sm text-ink-muted">Opening System does not call Google. Check tabs only when you need to see if a sheet is missing.</p>
         <Button className="mt-3" variant="secondary" disabled={busy || hiveBusy} onClick={() => void loadHive()}>
           {hiveBusy ? "Checking\u2026" : "Check company tabs"}
         </Button>
-        <p className="mt-2 text-xs text-ink-subtle">
-          {hive ? (hive.online ? (hive.credentialsFound ? "This computer can reach Google." : "Google credentials.json is missing.") : "Offline. Tabs cannot be inspected.") : hiveBusy ? "Checking company tabs\u2026" : "Not checked yet."}
-        </p>
         <ul className="mt-3 space-y-2 text-sm">
           {(hive?.tabs ?? []).map((tab) => (
             <li key={tab.kind} className="flex items-center justify-between gap-2">
@@ -153,10 +131,10 @@ export default function SettingsScreen({ onBack }: { onBack: () => void }) {
       </div>
       <input ref={fileRef} type="file" accept=".zip" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (!file) return; setRestoreFile(file); setRestorePath(file.name); setConfirm("restore"); }} />
       {confirm === "restore" ? (
-        <Confirm title="Replace the books on this computer?" body="A safety copy is taken first. Then this computer is replaced from the zip." confirmLabel="Restore" busy={busy} onCancel={() => { setConfirm(null); setRestoreFile(null); setRestorePath(""); }} onConfirm={() => { void run(() => restoreData(restorePath, restoreFile ?? undefined), "Restored.").then(() => { setConfirm(null); setRestoreFile(null); setRestorePath(""); }); }} />
+        <Confirm title="Replace the books on this computer?" body="A safety copy is taken first." confirmLabel="Restore" busy={busy} onCancel={() => { setConfirm(null); setRestoreFile(null); setRestorePath(""); }} onConfirm={() => { void run(() => restoreData(restorePath, restoreFile ?? undefined), "Restored.").then(() => { setConfirm(null); setRestoreFile(null); setRestorePath(""); }); }} />
       ) : null}
       {confirm === "logs" ? (
-        <Confirm title="Clear logs?" body="Error and performance logs will be emptied. Books are not touched." confirmLabel="Clear logs" busy={busy} onCancel={() => setConfirm(null)} onConfirm={() => { void run(() => clearLogs(), "Logs cleared.").then(() => setConfirm(null)); }} />
+        <Confirm title="Clear logs?" body="Logs will be emptied. Books are not touched." confirmLabel="Clear logs" busy={busy} onCancel={() => setConfirm(null)} onConfirm={() => { void run(() => clearLogs(), "Logs cleared.").then(() => setConfirm(null)); }} />
       ) : null}
       {toast ? <RefreshToast message={toast} onDone={() => setToast(null)} /> : null}
     </ModuleFrame>
