@@ -209,8 +209,14 @@ fn save_purchase_payment(
     state: tauri::State<AppState>,
     payload: PurchasePaymentSave,
 ) -> std::result::Result<PurchasePayment, String> {
-    require_mutate(&state)?;
+    let session = require_mutate(&state)?;
     let mut books = state.books.lock().expect("local books");
+    let key = if payload.pay_number.trim().is_empty() {
+        format!("PAY-id-{}", payload.id.unwrap_or(0))
+    } else {
+        payload.pay_number.trim().to_string()
+    };
+    let _ = crate::core::pipeline::park_save(books.conn(), "payment", &key, &session.email);
     crate::office::save_purchase_payment(&mut books, payload).map_err(map_err)
 }
 
@@ -231,6 +237,7 @@ fn submit_office(
     key: String,
 ) -> std::result::Result<CasOutcome, String> {
     require_submit_role(&state)?;
+    let actor = actor_email(&state);
     let allow = state
         .session
         .lock()
@@ -239,6 +246,18 @@ fn submit_office(
         .map(|s| s.role == "owner" || crate::is_hardcoded_owner(&s.email))
         .unwrap_or(false);
     let books = state.books.lock().expect("local books");
+    let decision = crate::core::pipeline::gate_submit(
+        books.conn(),
+        &kind,
+        &key,
+        is_online(),
+        true,
+        &actor,
+    )
+    .map_err(map_err)?;
+    if let crate::core::pipeline::Decision::Refuse { message } = decision {
+        return Err(message);
+    }
     crate::office_sync::submit_office(&books, &kind, &key, allow).map_err(map_err)
 }
 
