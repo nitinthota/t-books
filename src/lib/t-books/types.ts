@@ -99,6 +99,9 @@ export type VoucherListRow = {
   remaining: number;
   status: string;
   isDirty: boolean;
+  deskIntent?: string;
+  deskDecision?: string;
+  deskAt?: string;
 };
 
 export type PaymentView = {
@@ -136,6 +139,9 @@ export type VoucherView = {
   description?: string;
   voucherType?: string;
   taxFlag?: string;
+  deskIntent?: string;
+  deskDecision?: string;
+  deskAt?: string;
 };
 
 export type VoucherSave = {
