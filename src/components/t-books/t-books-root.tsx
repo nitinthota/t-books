@@ -23,7 +23,7 @@ export function TBooksRoot() {
           <TriangleAlert className="size-8 text-danger" strokeWidth={1.75} aria-hidden="true" />
           <h1 className="text-xl font-medium tracking-tight">Could not open the local books</h1>
           <p className="max-w-md text-sm break-words text-ink-muted">
-            {bootError ?? "Unknown error while opening SQLite on this PC."}
+            {bootError ?? "Could not open the books."}
           </p>
         </div>
       </div>
