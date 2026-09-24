@@ -129,14 +129,14 @@ export const BoardHome = memo(function BoardHome({
       ) : null}
       <form onSubmit={(e) => void onAsk(e)} className="mb-6">
         <label className="block text-xs uppercase tracking-wide text-ink-subtle" htmlFor="board-ask">
-          Ask the books
+          Search
         </label>
         <div className="mt-1.5 flex gap-2">
           <input
             id="board-ask"
             value={askText}
             onChange={(e) => setAskText(e.target.value)}
-            placeholder="Example: how much is still due to Star Engineering"
+            placeholder="Search"
             className="h-11 flex-1 rounded-md bg-paper-raised px-3 text-sm ring-1 ring-line"
           />
           <button type="submit" className="pressable h-11 rounded-md bg-navy px-4 text-sm text-white" disabled={looking}>
@@ -149,8 +149,8 @@ export const BoardHome = memo(function BoardHome({
         <Tile label="Vouchers" value={String(voucherCount)} hint={`${formatRupees(voucherDue)} still to pay`} onClick={() => onOpen("vouchers")} />
         <Tile label="Purchase bills" value={String(bills.length)} hint={`${formatRupees(purchaseDue)} unpaid`} onClick={() => onOpen("purchase")} />
         <Tile label="Sales orders" value={String(orders.length)} hint={`${formatRupees(salesBalance)} balance`} onClick={() => onOpen("sales")} />
-        <Tile label="Jobs" value="Open" hint="Billed, paid and still due" onClick={() => onOpen("projects")} />
-        <Tile label="Vendors" value="Open" hint="GST, banks and jobs" onClick={() => onOpen("vendors")} />
+        <Tile label="Jobs" value="Open" onClick={() => onOpen("projects")} />
+        <Tile label="Vendors" value="Open" onClick={() => onOpen("vendors")} />
         <Tile label="Not posted" value={String(unsynced)} hint={unsynced ? "Unsaved drafts" : "All posted"} gold={unsynced > 0} onClick={() => onOpen(keys[0] ? navForDirty(keys[0].kind) : "vouchers")} />
       </div>
       {keys.length > 0 ? (
@@ -176,13 +176,13 @@ export const BoardHome = memo(function BoardHome({
 function Tile({
   label, value, hint, onClick, gold,
 }: {
-  label: string; value: string; hint: string; onClick: () => void; gold?: boolean;
+  label: string; value: string; hint?: string; onClick: () => void; gold?: boolean;
 }) {
   return (
     <button type="button" onClick={onClick} className="board-card pressable rounded-lg bg-paper-raised p-5 text-left ring-1 ring-line">
       <p className="text-xs text-ink-subtle">{label}</p>
       <p className={gold ? "money-figure mt-1 text-3xl text-gold" : "money-figure mt-1 text-3xl text-navy"}>{value}</p>
-      <p className="mt-2 text-sm text-ink-muted">{hint}</p>
+      {hint ? <p className="mt-2 text-sm text-ink-muted">{hint}</p> : null}
     </button>
   );
 }
