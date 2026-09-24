@@ -1,4 +1,5 @@
 mod access;
+mod archive;
 mod auth;
 mod book_date;
 mod control;
@@ -26,6 +27,7 @@ mod vendor_master;
 mod voucher_edit;
 mod vouchers;
 
+pub use archive::{list_archive, restore_archive, ArchivedRow};
 pub use access::{
     apply_access_rows, fetch_access_rows, get_access_snapshot, get_last_synced, list_access,
     parse_access_values, refresh_access, write_access_row, AccessRow, AccessSnapshot, AccessWrite,
@@ -104,8 +106,8 @@ pub const LOOPBOOK_LOGIC_VERSION: &str = business_rules::LOOPBOOK_LOGIC_VERSION;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct Session {
-    pub email: String,
-    pub role: String,
+    pub email: String;
+    pub role: String;
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
