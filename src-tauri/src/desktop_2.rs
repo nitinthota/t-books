@@ -86,30 +86,44 @@ fn get_voucher_summary(
 #[tauri::command]
 fn list_vouchers(
     state: tauri::State<AppState>,
-) -> std::result::Result<Vec<crate::vouchers::VoucherListRow>, String> {
+) -> std::result::Result<Vec<crate::core::jef::DeskRow<crate::vouchers::VoucherListRow>>, String> {
     let books = state.books.lock().expect("local books");
-    crate::vouchers::list_vouchers(&books).map_err(|e| e.to_string())
+    let rows = crate::vouchers::list_vouchers(&books).map_err(|e| e.to_string())?;
+    let map = crate::core::jef::last_map(books.conn(), "voucher").unwrap_or_default();
+    Ok(rows
+        .into_iter()
+        .map(|row| {
+            let slice = map.get(&row.voucher_number.to_string());
+            crate::core::jef::DeskRow::attach(row, slice)
+        })
+        .collect())
 }
 
 #[tauri::command]
 fn get_voucher(
     state: tauri::State<AppState>,
     voucher_number: i64,
-) -> std::result::Result<crate::vouchers::VoucherView, String> {
+) -> std::result::Result<crate::core::jef::DeskRow<crate::vouchers::VoucherView>, String> {
     let books = state.books.lock().expect("local books");
-    crate::voucher_edit::get_voucher_full(&books, voucher_number).map_err(|e| e.to_string())
+    let view = crate::voucher_edit::get_voucher_full(&books, voucher_number).map_err(|e| e.to_string())?;
+    let map = crate::core::jef::last_map(books.conn(), "voucher").unwrap_or_default();
+    let slice = map.get(&voucher_number.to_string());
+    Ok(crate::core::jef::DeskRow::attach(view, slice))
 }
 
 #[tauri::command]
 fn save_voucher(
     state: tauri::State<AppState>,
     payload: VoucherSave,
-) -> std::result::Result<crate::vouchers::VoucherView, String> {
+) -> std::result::Result<crate::core::jef::DeskRow<crate::vouchers::VoucherView>, String> {
     let session = require_mutate(&state)?;
     let mut books = state.books.lock().expect("local books");
     let key = payload.voucher_number.to_string();
     let _ = crate::core::pipeline::park_save(books.conn(), "voucher", &key, &session.email);
-    crate::save_voucher(&mut books, payload).map_err(|e| e.to_string())
+    let view = crate::save_voucher(&mut books, payload).map_err(|e| e.to_string())?;
+    let map = crate::core::jef::last_map(books.conn(), "voucher").unwrap_or_default();
+    let slice = map.get(&key);
+    Ok(crate::core::jef::DeskRow::attach(view, slice))
 }
 
 fn require_submit_role(state: &tauri::State<AppState>) -> std::result::Result<(), String> {
