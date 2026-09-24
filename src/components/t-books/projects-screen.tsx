@@ -19,6 +19,26 @@ type ProjectRollup = {
   vendors: string[];
 };
 
+type JobFilter = "all" | "due" | "paid" | "sales" | "purchase" | "empty";
+
+function matchesFilter(row: ProjectRollup, filter: JobFilter): boolean {
+  const hasDocs = row.vouchers > 0 || row.purchaseCount > 0 || row.salesCount > 0;
+  switch (filter) {
+    case "due":
+      return row.due > 0.5;
+    case "paid":
+      return row.billed > 0.5 && row.due <= 0.5;
+    case "sales":
+      return row.salesCount > 0;
+    case "purchase":
+      return row.purchaseCount > 0;
+    case "empty":
+      return !hasDocs;
+    default:
+      return true;
+  }
+}
+
 export default function ProjectsScreen({
   onBack,
   focusId,
@@ -34,6 +54,7 @@ export default function ProjectsScreen({
   const [sales, setSales] = useState<SalesPo[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<JobFilter>("all");
   const [openName, setOpenName] = useState<string | null>(focusId?.trim() || null);
 
   const reload = useCallback(async () => {
@@ -99,12 +120,34 @@ export default function ProjectsScreen({
     });
   }, [names, vouchers, purchases, sales]);
 
+  const counts = useMemo(() => {
+    const tally = {
+      all: rows.length,
+      due: 0,
+      paid: 0,
+      sales: 0,
+      purchase: 0,
+      empty: 0,
+    };
+    for (const row of rows) {
+      if (matchesFilter(row, "due")) tally.due += 1;
+      if (matchesFilter(row, "paid")) tally.paid += 1;
+      if (matchesFilter(row, "sales")) tally.sales += 1;
+      if (matchesFilter(row, "purchase")) tally.purchase += 1;
+      if (matchesFilter(row, "empty")) tally.empty += 1;
+    }
+    return tally;
+  }, [rows]);
+
   const focused = focusId?.trim() ?? "";
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter((row) => row.project.toLowerCase().includes(q));
-  }, [rows, query]);
+    return rows.filter((row) => {
+      if (!matchesFilter(row, filter)) return false;
+      if (q && !row.project.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [rows, query, filter]);
 
   const open = rows.find((row) => row.project === openName) ?? null;
 
@@ -158,6 +201,15 @@ export default function ProjectsScreen({
     );
   }
 
+  const chips: Array<{ id: JobFilter; label: string; count: number }> = [
+    { id: "all", label: "All jobs", count: counts.all },
+    { id: "due", label: "Still to pay", count: counts.due },
+    { id: "paid", label: "Settled", count: counts.paid },
+    { id: "sales", label: "Customer PO", count: counts.sales },
+    { id: "purchase", label: "Purchase bills", count: counts.purchase },
+    { id: "empty", label: "Name only", count: counts.empty },
+  ];
+
   return (
     <ModuleFrame title="Projects" hint="Open a job for counts. Click a count to open those documents." onBack={onBack} error={error}>
       <input
@@ -165,15 +217,40 @@ export default function ProjectsScreen({
         onChange={(e) => setQuery(e.target.value)}
         placeholder="Job name"
         aria-label="Search jobs"
-        className="mb-4 h-11 w-full max-w-md rounded-md bg-paper-raised px-3 text-sm ring-1 ring-line"
+        className="mb-3 h-11 w-full max-w-md rounded-md bg-paper-raised px-3 text-sm ring-1 ring-line"
       />
+      <div className="mb-4 flex flex-wrap gap-2" role="tablist" aria-label="Job filters">
+        {chips.map((chip) => {
+          const on = filter === chip.id;
+          return (
+            <button
+              key={chip.id}
+              type="button"
+              role="tab"
+              aria-selected={on}
+              onClick={() => setFilter(chip.id)}
+              className={
+                on
+                  ? "pressable rounded-md bg-navy px-3 py-1.5 text-xs text-white"
+                  : "pressable rounded-md px-3 py-1.5 text-xs text-ink-muted ring-1 ring-line"
+              }
+            >
+              {chip.label} {chip.count}
+            </button>
+          );
+        })}
+      </div>
       <div className="overflow-hidden rounded-lg bg-paper-raised ring-1 ring-line">
         <VirtualTable
           rows={visible}
           rowKey={(row) => row.project}
           empty={
             <p className="text-sm text-ink-muted">
-              {names === null ? "Opening jobs…" : query.trim() ? "No job matches." : "No jobs yet."}
+              {names === null
+                ? "Opening jobs…"
+                : query.trim() || filter !== "all"
+                  ? "No job matches."
+                  : "No jobs yet."}
             </p>
           }
           header={
