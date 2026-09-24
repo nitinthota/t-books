@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       build_installer:
-        description: "Also build T-Books-Setup.exe"
+        description: "Also build LoopBooks-Setup.exe"
         type: boolean
         default: false
 
@@ -61,12 +61,12 @@ jobs:
             echo "credentials.json must not be in the checkout used to build the installer."
             exit 1
           fi
-          if git ls-files | grep -E '(^|/)credentials\.json$|google-service-account\.json$'; then
+          if git ls-files | grep -E '(^|/)credentials\\.json$|google-service-account\\.json$'; then
             echo "Tracked credential files are forbidden."
             exit 1
           fi
 
-      - name: Build T-Books-Setup.exe
+      - name: Build LoopBooks-Setup.exe
         shell: bash
         run: |
           npm run tauri:build
@@ -75,6 +75,6 @@ jobs:
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
-          name: T-Books-Setup
-          path: dist/installers/T-Books-Setup.exe
+          name: LoopBooks-Setup
+          path: dist/installers/LoopBooks-Setup.exe
           if-no-files-found: error
