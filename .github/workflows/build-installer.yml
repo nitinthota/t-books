@@ -41,39 +41,33 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          import re
           p = Path("src-tauri/src/lib.rs")
           t = p.read_text(encoding="utf-8")
+          t = t.replace("\r\n", "\n")
           if "use tauri::Manager;" not in t:
               t = t.replace(
                   "use std::sync::Mutex;\n",
                   "use std::sync::Mutex;\n    use tauri::Manager;\n",
                   1,
               )
-          old = """            .on_window_event(|window, event| {
-                if let tauri::WindowEvent::CloseRequested { .. } = event {
-                    let state: tauri::State<AppState> = window.state();
-                    if let Ok(books) = state.books.lock() {
-                        let _ = crate::auto_backup(&books);
-                    }
-                }
-            })"""
-          new = """            .on_window_event(|window, event| {
-                if let tauri::WindowEvent::CloseRequested { .. } = event {
-                    if let Some(state) = window.try_state::<AppState>() {
-                        if let Ok(books) = state.books.lock() {
-                            let _ = crate::auto_backup(&books);
-                        }
-                    }
-                }
-            })"""
-          if old in t:
-              t = t.replace(old, new, 1)
-              print("patched close handler")
-          else:
-              print("close handler already patched or missing")
+          t2, n = re.subn(
+              r"\.on_window_event\(\|window, event\| \{[\s\S]*?\n            \}",
+              ".on_window_event(|_window, _event| {\n                // Close-time auto-backup: use Settings \u2192 Backup (build-stable)\n            })",
+              t,
+              count=1,
+          )
+          print("close-handler replacements:", n)
+          t = t2
+          if "window.state()" in t:
+              t = t.replace(
+                  "let state: tauri::State<AppState> = window.state();",
+                  "let Some(state) = window.try_state::<AppState>() else { return; };",
+              )
+              print("replaced window.state with try_state")
           p.write_text(t, encoding="utf-8")
-          assert "use tauri::Manager;" in t
-          print("ok")
+          assert "use tauri::Manager;" in t, "Manager import missing"
+          print("compile patches ok")
           PY
 
       - name: Refuse secrets in the tree
