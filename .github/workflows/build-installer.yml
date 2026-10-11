@@ -36,6 +36,17 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Fix tauri::Manager import (window.state)
+        shell: bash
+        run: |
+          if ! grep -q 'use tauri::Manager;' src-tauri/src/lib.rs; then
+            sed -i 's/use std::sync::Mutex;/use std::sync::Mutex;\n    use tauri::Manager;/' src-tauri/src/lib.rs
+            echo "Patched Manager import"
+          else
+            echo "Manager already imported"
+          fi
+          grep -n 'use tauri::Manager' src-tauri/src/lib.rs
+
       - name: Refuse secrets in the tree
         shell: bash
         run: |
@@ -46,10 +57,6 @@ jobs:
 
       - name: Build frontend (Vite for Tauri)
         run: npm run build:tauri
-
-      - name: Show frontend dist
-        shell: bash
-        run: ls -la dist/client | head -30
 
       - name: Build Tauri + NSIS installer
         shell: bash
