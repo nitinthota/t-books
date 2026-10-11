@@ -10,10 +10,9 @@ import {
   listSalesPo,
   previewPo,
   saveSalesPo,
-  submitOffice,
 } from "@/lib/t-books/office";
 import { invokeErrorMessage } from "@/lib/t-books/platform";
-import type { SalesPo, SalesPoKind } from "@/lib/t-books/types";
+import type { SalesPo } from "@/lib/t-books/types";
 import { cn } from "@/lib/utils";
 import { ModuleFrame, SuggestField } from "./module-frame";
 import { draftsFromItems, emptyItem, parseItemDrafts, PoItemsEditor, type ItemDraft } from "./po-items-editor";
@@ -26,7 +25,6 @@ type Draft = {
   poNumber: string;
   client: string;
   gst: string;
-  kind: SalesPoKind;
   received: string;
   termValue: string;
   termUnit: "days" | "months";
@@ -40,7 +38,6 @@ function blankDraft(): Draft {
     poNumber: "",
     client: "",
     gst: "",
-    kind: "contract",
     received: "0",
     termValue: "0",
     termUnit: "days",
@@ -55,16 +52,11 @@ function fromPo(po: SalesPo): Draft {
     poNumber: po.poNumber,
     client: po.client,
     gst: po.gst,
-    kind: po.kind === "project" ? "project" : "contract",
     received: String(po.receivedRupees ?? 0),
     termValue: String(po.paymentTermValue ?? 0),
     termUnit: po.paymentTermUnit === "months" ? "months" : "days",
     items: draftsFromItems(po.items ?? []),
   };
-}
-
-function salesKey(poNumber: string, project: string): string {
-  return `${poNumber.trim()}@${project.trim()}`;
 }
 
 export default function SalesScreen({
@@ -141,7 +133,7 @@ export default function SalesScreen({
       client: draft.client,
       gst: draft.gst,
       items,
-      kind: draft.kind,
+      kind: "project",
       receivedRupees: Number.isFinite(received) ? received : 0,
       paymentTermValue: Number.isFinite(termValue) ? termValue : 0,
       paymentTermUnit: draft.termUnit,
@@ -172,27 +164,11 @@ export default function SalesScreen({
     }
   }
 
-  function openNew(kind: SalesPoKind = "contract") {
-    const next = { ...blankDraft(), kind };
+  function openNew() {
+    const next = blankDraft();
     setDraft(next);
     setSaved(next);
     setMode("edit");
-  }
-
-  function cloneAsProject() {
-    if (!draft.project.trim()) {
-      setError("Project is required before cloning.");
-      return;
-    }
-    const next: Draft = {
-      ...draft,
-      id: null,
-      kind: "project",
-      poNumber: draft.poNumber ? `${draft.poNumber}-P` : "",
-    };
-    setDraft(next);
-    setSaved(blankDraft());
-    setError(null);
   }
 
   async function onDelete(id: number) {
@@ -220,63 +196,24 @@ export default function SalesScreen({
     }
   }
 
-  async function onSubmit() {
-    setBusy(true);
-    try {
-      const po = await persist();
-      const out = await submitOffice("sales_po", salesKey(po.poNumber, po.project));
-      if (out.kind === "conflict") setError(out.message);
-      else await reload();
-    } catch (err) {
-      setError(invokeErrorMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
   if (mode === "edit") {
     const grand = summary ? paiseToRupees(summary.grand_total_paise) : previewPo([]).grandTotal;
     const received = summary ? paiseToRupees(summary.amount_received_paise) : 0;
     const balance = summary ? paiseToRupees(summary.balance_paise) : grand;
     return (
       <ModuleFrame
-        title={draft.id ? "Edit sales PO" : "New sales PO"}
-        hint="Save is this PC + dirty. Submit publishes one Sales_PO hive row keyed PO@project. Same PO on another project is allowed."
+        title={draft.id ? "Edit sales PO" : "New PO"}
+        hint="One form. Save writes this PC. Google write is the simple path (no contract PO, no hive Submit)."
         onBack={() => requestLeave(() => setMode("list"))}
         error={error}
         actions={
-          <div className="flex gap-2">
-            <Button variant="secondary" onClick={() => void onSaveStay()} disabled={busy}>
-              {busy ? "Saving…" : "Save"}
-            </Button>
-            <Button onClick={() => void onSubmit()} disabled={busy}>
-              Submit
-            </Button>
-          </div>
+          <Button variant="secondary" onClick={() => void onSaveStay()} disabled={busy}>
+            {busy ? "Saving…" : "Save"}
+          </Button>
         }
       >
         <div className="rounded-lg bg-paper-raised p-5 ring-1 ring-line">
           <p className="text-xs font-medium uppercase tracking-wide text-ink-subtle">Basic</p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {(["contract", "project"] as const).map((kind) => (
-              <button
-                key={kind}
-                type="button"
-                className={cn(
-                  "h-11 rounded-md px-4 text-sm capitalize",
-                  draft.kind === kind ? "bg-navy text-paper-raised" : "bg-paper-sunken text-ink-muted",
-                )}
-                onClick={() => setDraft({ ...draft, kind })}
-              >
-                {kind}
-              </button>
-            ))}
-            {draft.kind === "contract" ? (
-              <Button variant="ghost" onClick={cloneAsProject}>
-                Clone to project PO
-              </Button>
-            ) : null}
-          </div>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <SuggestField
               id="sales-project"
@@ -316,7 +253,7 @@ export default function SalesScreen({
           </div>
 
           <div className="ledger-rule my-5" />
-          <p className="text-xs font-medium uppercase tracking-wide text-ink-subtle">Contract</p>
+          <p className="text-xs font-medium uppercase tracking-wide text-ink-subtle">Terms</p>
           <div className="mt-3 grid gap-4 sm:grid-cols-3">
             <div>
               <Label htmlFor="sales-term">Payment term</Label>
@@ -398,17 +335,10 @@ export default function SalesScreen({
   return (
     <ModuleFrame
       title="Sales"
-      hint="Contract and project POs on this PC. Refresh from Google does not delete these rows."
+      hint="One New PO path. No contract PO. Refresh from Google does not delete these rows."
       onBack={() => requestLeave(onBack)}
       error={error}
-      actions={
-        <div className="flex gap-2">
-          <Button variant="secondary" onClick={() => openNew("project")}>
-            New project PO
-          </Button>
-          <Button onClick={() => openNew("contract")}>New contract PO</Button>
-        </div>
-      }
+      actions={<Button onClick={openNew}>New PO</Button>}
     >
       <div className="overflow-hidden rounded-lg bg-paper-raised ring-1 ring-line">
         <VirtualTable
@@ -423,7 +353,6 @@ export default function SalesScreen({
             <tr>
               <TableHeadCell>PO</TableHeadCell>
               <TableHeadCell>Project</TableHeadCell>
-              <TableHeadCell>Kind</TableHeadCell>
               <TableHeadCell>Client</TableHeadCell>
               <TableHeadCell className="text-right">Grand</TableHeadCell>
               <TableHeadCell className="text-right">Received</TableHeadCell>
@@ -435,12 +364,8 @@ export default function SalesScreen({
             const received = row.receivedRupees ?? 0;
             return (
               <tr className="table-row">
-                <TableCell>
-                  {row.poNumber}
-                  {row.isDirty ? " · dirty" : ""}
-                </TableCell>
+                <TableCell>{row.poNumber}</TableCell>
                 <TableCell className="text-ink-muted">{row.project || "—"}</TableCell>
-                <TableCell className="text-ink-muted">{row.kind === "project" ? "project" : "contract"}</TableCell>
                 <TableCell className="text-ink-muted">{row.client || "—"}</TableCell>
                 <TableCell className="text-right tabular-nums">{formatRupees(row.totalValue)}</TableCell>
                 <TableCell className="text-right tabular-nums">{formatRupees(received)}</TableCell>

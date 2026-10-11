@@ -13,10 +13,9 @@ import {
   listVendors,
   savePurchasePayment,
   savePurchasePo,
-  submitOffice,
 } from "@/lib/t-books/office";
 import { invokeErrorMessage } from "@/lib/t-books/platform";
-import type { PurchasePayment, PurchasePo, PurchaseType } from "@/lib/t-books/types";
+import type { PurchasePayment, PurchasePo } from "@/lib/t-books/types";
 import { cn } from "@/lib/utils";
 import { ModuleFrame, SuggestField } from "./module-frame";
 import { draftsFromItems, emptyItem, parseItemDrafts, PoItemsEditor, type ItemDraft } from "./po-items-editor";
@@ -28,7 +27,6 @@ type Draft = {
   project: string;
   vendor: string;
   poNumber: string;
-  type: PurchaseType;
   totalValue: string;
   goodsReceived: boolean;
   taxInvoiceNo: string;
@@ -49,7 +47,6 @@ function blankDraft(): Draft {
     project: "",
     vendor: "",
     poNumber: "",
-    type: "contract",
     totalValue: "0",
     goodsReceived: false,
     taxInvoiceNo: "",
@@ -64,7 +61,6 @@ function fromPo(po: PurchasePo): Draft {
     project: po.project,
     vendor: po.vendor,
     poNumber: po.poNumber,
-    type: po.type,
     totalValue: String(po.totalValue ?? 0),
     goodsReceived: Boolean(po.goodsReceived),
     taxInvoiceNo: po.taxInvoiceNo ?? "",
@@ -126,9 +122,9 @@ export default function PurchaseScreen({
   }, [focusId]);
 
   const writeBill = useCallback(async () => {
-    const items = draft.type === "simple" ? [] : parseItemDrafts(draft.items);
+    const items = parseItemDrafts(draft.items);
     const totalValue = Number(draft.totalValue);
-    if (draft.type === "simple" && draft.totalValue.trim() && !Number.isFinite(totalValue)) {
+    if (draft.totalValue.trim() && !Number.isFinite(totalValue)) {
       throw new Error("Total must be a number.");
     }
     const savedPo = await savePurchasePo({
@@ -136,7 +132,7 @@ export default function PurchaseScreen({
       project: draft.project,
       vendor: draft.vendor,
       poNumber: draft.poNumber,
-      type: draft.type,
+      type: "simple",
       totalValue: Number.isFinite(totalValue) ? totalValue : 0,
       items,
       goodsReceived: draft.goodsReceived,
@@ -204,37 +200,6 @@ export default function PurchaseScreen({
     }
   }
 
-  async function onSubmitBill() {
-    setBusy(true);
-    try {
-      const po = await writeBill();
-      const out = await submitOffice("purchase", po.poNumber);
-      if (out.kind === "conflict") setError(out.message);
-      else await reload();
-    } catch (err) {
-      setError(invokeErrorMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function onSubmitPay(payNumber: string) {
-    if (!payNumber.trim()) {
-      setError("Save the payment first so it has a PAY number.");
-      return;
-    }
-    setBusy(true);
-    try {
-      const out = await submitOffice("payment", payNumber);
-      if (out.kind === "conflict") setError(out.message);
-      else await reload();
-    } catch (err) {
-      setError(invokeErrorMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function onAddPay() {
     if (!draft.poNumber) {
       setError("Save the bill first so it has a PUR number.");
@@ -288,38 +253,18 @@ export default function PurchaseScreen({
   if (mode === "edit") {
     return (
       <ModuleFrame
-        title={draft.id ? "Edit purchase bill" : "New purchase bill"}
-        hint="Save writes this PC only. Submit sends one hive row. Blank number becomes PUR-0001."
+        title={draft.id ? "Edit purchase bill" : "New bill"}
+        hint="One form. No contract/simple layer. Save writes this PC. Blank number becomes PUR-0001."
         onBack={() => requestLeave(() => setMode("list"))}
         error={error}
         actions={
-          <div className="flex gap-2">
-            <Button variant="secondary" onClick={() => void onSaveStay()} disabled={busy}>
-              {busy ? "Saving…" : "Save"}
-            </Button>
-            <Button onClick={() => void onSubmitBill()} disabled={busy}>
-              Submit
-            </Button>
-          </div>
+          <Button variant="secondary" onClick={() => void onSaveStay()} disabled={busy}>
+            {busy ? "Saving…" : "Save"}
+          </Button>
         }
       >
         <div className="rounded-lg bg-paper-raised p-5 ring-1 ring-line">
           <p className="text-xs font-medium uppercase tracking-wide text-ink-subtle">Bill</p>
-          <div className="mt-3 flex gap-2">
-            {(["contract", "simple"] as const).map((kind) => (
-              <button
-                key={kind}
-                type="button"
-                className={cn(
-                  "pressable h-11 rounded-md px-4 text-sm capitalize",
-                  draft.type === kind ? "bg-navy text-paper-raised" : "bg-paper-sunken text-ink-muted",
-                )}
-                onClick={() => setDraft({ ...draft, type: kind })}
-              >
-                {kind}
-              </button>
-            ))}
-          </div>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <SuggestField
               id="pur-project"
@@ -347,18 +292,16 @@ export default function PurchaseScreen({
                 onChange={(e) => setDraft({ ...draft, poNumber: e.target.value })}
               />
             </div>
-            {draft.type === "simple" ? (
-              <div>
-                <Label htmlFor="pur-total">Total</Label>
-                <Input
-                  id="pur-total"
-                  className="mt-1.5"
-                  inputMode="decimal"
-                  value={draft.totalValue}
-                  onChange={(e) => setDraft({ ...draft, totalValue: e.target.value })}
-                />
-              </div>
-            ) : null}
+            <div>
+              <Label htmlFor="pur-total">Total</Label>
+              <Input
+                id="pur-total"
+                className="mt-1.5"
+                inputMode="decimal"
+                value={draft.totalValue}
+                onChange={(e) => setDraft({ ...draft, totalValue: e.target.value })}
+              />
+            </div>
             <div>
               <Label htmlFor="pur-tax">Tax invoice</Label>
               <Input
@@ -386,12 +329,8 @@ export default function PurchaseScreen({
             />
             Goods received
           </label>
-          {draft.type === "contract" ? (
-            <>
-              <div className="ledger-rule my-5" />
-              <PoItemsEditor items={draft.items} onChange={(items) => setDraft({ ...draft, items })} />
-            </>
-          ) : null}
+          <div className="ledger-rule my-5" />
+          <PoItemsEditor items={draft.items} onChange={(items) => setDraft({ ...draft, items })} />
           {draft.poNumber ? (
             <>
               <div className="ledger-rule my-5" />
@@ -413,14 +352,9 @@ export default function PurchaseScreen({
                     <span className="font-mono">
                       {p.payNumber} · {formatRupees(p.amountRupees)} · {p.payClass}
                     </span>
-                    <div className="flex gap-1">
-                      <Button size="sm" variant="secondary" onClick={() => void onSubmitPay(p.payNumber)} disabled={busy}>
-                        Submit
-                      </Button>
-                      <Button size="sm" variant="ghost" onClick={() => void deletePurchasePayment(p.id!).then(reload)}>
-                        Delete
-                      </Button>
-                    </div>
+                    <Button size="sm" variant="ghost" onClick={() => void deletePurchasePayment(p.id!).then(reload)}>
+                      Delete
+                    </Button>
                   </li>
                 ))}
                 {billPays.length === 0 ? <li className="text-ink-muted">No PAY rows on this bill yet.</li> : null}
@@ -435,7 +369,7 @@ export default function PurchaseScreen({
   return (
     <ModuleFrame
       title="Purchase"
-      hint="PUR bills and PAY bank payments on this PC. Refresh does not change these rows."
+      hint="One New bill path. No contract/simple layer. Refresh does not change these rows."
       onBack={() => requestLeave(onBack)}
       error={error}
       actions={<Button onClick={openNew}>New bill</Button>}
@@ -448,7 +382,7 @@ export default function PurchaseScreen({
               key={f.key}
               type="button"
               className={cn(
-                "pressable h-11 rounded-md px-3 text-sm",
+                "h-11 rounded-md px-3 text-sm",
                 on ? "bg-navy text-paper-raised" : "bg-paper-sunken text-ink-muted",
               )}
               onClick={() =>
