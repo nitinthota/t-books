@@ -10,8 +10,10 @@ import {
   listSalesPo,
   previewPo,
   saveSalesPo,
+  submitOffice,
 } from "@/lib/t-books/office";
 import { invokeErrorMessage } from "@/lib/t-books/platform";
+import { useBooks } from "@/lib/t-books/store";
 import type { SalesPo } from "@/lib/t-books/types";
 import { cn } from "@/lib/utils";
 import { ModuleFrame, SuggestField } from "./module-frame";
@@ -59,6 +61,10 @@ function fromPo(po: SalesPo): Draft {
   };
 }
 
+function salesKey(poNumber: string, project: string): string {
+  return `${poNumber.trim()}@${project.trim()}`;
+}
+
 export default function SalesScreen({
   onBack,
   focusId,
@@ -67,6 +73,7 @@ export default function SalesScreen({
   focusId?: string | null;
 }) {
   const { requestLeave } = useUnsaved();
+  const online = useBooks((s) => s.online);
   const [rows, setRows] = useState<SalesPo[] | null>(null);
   const [projects, setProjects] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -196,6 +203,29 @@ export default function SalesScreen({
     }
   }
 
+  async function onSaveToGoogle() {
+    setBusy(true);
+    try {
+      const po = await persist();
+      const key = salesKey(po.poNumber, po.project);
+      if (!key.includes("@") || key.startsWith("@") || key.endsWith("@")) {
+        throw new Error("Project and PO number are required before writing to Google.");
+      }
+      const out = await submitOffice("sales_po", key);
+      if (out.kind === "conflict") {
+        setError(out.message || "Google row changed. Refresh and try again.");
+      } else {
+        setError(null);
+        setMode("list");
+        await reload();
+      }
+    } catch (err) {
+      setError(invokeErrorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (mode === "edit") {
     const grand = summary ? paiseToRupees(summary.grand_total_paise) : previewPo([]).grandTotal;
     const received = summary ? paiseToRupees(summary.amount_received_paise) : 0;
@@ -203,13 +233,18 @@ export default function SalesScreen({
     return (
       <ModuleFrame
         title={draft.id ? "Edit sales PO" : "New PO"}
-        hint="One form. Save writes this PC. Google write is the simple path (no contract PO, no hive Submit)."
+        hint="Save is this PC. Save to Google writes the sheet when online."
         onBack={() => requestLeave(() => setMode("list"))}
         error={error}
         actions={
-          <Button variant="secondary" onClick={() => void onSaveStay()} disabled={busy}>
-            {busy ? "Saving…" : "Save"}
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => void onSaveStay()} disabled={busy}>
+              {busy ? "Saving…" : "Save"}
+            </Button>
+            <Button onClick={() => void onSaveToGoogle()} disabled={busy || !online}>
+              Save to Google
+            </Button>
+          </div>
         }
       >
         <div className="rounded-lg bg-paper-raised p-5 ring-1 ring-line">
@@ -335,7 +370,7 @@ export default function SalesScreen({
   return (
     <ModuleFrame
       title="Sales"
-      hint="One New PO path. No contract PO. Refresh from Google does not delete these rows."
+      hint="One New PO path. No contract PO. Refresh pulls the sheet into this PC."
       onBack={() => requestLeave(onBack)}
       error={error}
       actions={<Button onClick={openNew}>New PO</Button>}
