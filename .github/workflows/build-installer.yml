@@ -8,7 +8,7 @@ on:
 jobs:
   build:
     runs-on: windows-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
 
     steps:
       - name: Checkout
@@ -17,16 +17,19 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: "22"
           cache: npm
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      # windows-latest usually already has WebView2; choco often fails — do not block the build
-      - name: Install WebView2 Runtime (optional)
+      - name: Install NSIS
+        run: choco install nsis -y
         continue-on-error: true
+
+      - name: WebView2 (optional)
         run: choco install microsoft-edge-webview2-runtime -y
+        continue-on-error: true
 
       - name: Install dependencies
         run: npm ci
@@ -39,14 +42,20 @@ jobs:
             exit 1
           fi
 
-      - name: Build T-Books-Setup.exe
-        run: npm run tauri:build
+      - name: Build frontend (Vite for Tauri)
+        run: npm run build:tauri
 
-      - name: Upload NSIS bundle
+      - name: Build Tauri + NSIS installer
+        run: npx tauri build --ci
+
+      - name: Rename installer to T-Books-Setup.exe
+        run: node scripts/rename-installer.mjs
+
+      - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
           name: TBooks-Build
           path: |
-            src-tauri/target/release/bundle/**
             dist/installers/T-Books-Setup.exe
-          if-no-files-found: warn
+            src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
