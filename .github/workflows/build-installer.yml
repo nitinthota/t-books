@@ -8,6 +8,7 @@ on:
 jobs:
   build:
     runs-on: windows-latest
+    timeout-minutes: 60
 
     steps:
       - name: Checkout
@@ -17,21 +18,35 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install WebView2 Runtime
+      # windows-latest usually already has WebView2; choco often fails — do not block the build
+      - name: Install WebView2 Runtime (optional)
+        continue-on-error: true
         run: choco install microsoft-edge-webview2-runtime -y
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Build Tauri App (single command)
+      - name: Refuse secrets in the tree
+        shell: bash
+        run: |
+          if [ -f credentials.json ] || [ -f secrets/google-service-account.json ]; then
+            echo "credentials must not be in the build tree."
+            exit 1
+          fi
+
+      - name: Build T-Books-Setup.exe
         run: npm run tauri:build
 
-      - name: Upload Artifacts
+      - name: Upload NSIS bundle
         uses: actions/upload-artifact@v4
         with:
           name: TBooks-Build
-          path: src-tauri/target/release/bundle/**
+          path: |
+            src-tauri/target/release/bundle/**
+            dist/installers/T-Books-Setup.exe
+          if-no-files-found: warn
