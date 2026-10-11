@@ -32,6 +32,7 @@ import type {
   VoucherSummary,
 } from "./types";
 import {
+  clearLocalDrafts,
   forceRefreshVouchers as localForceRefresh,
   getVoucherSummary,
   refreshVouchers as localRefreshVouchers,
@@ -65,8 +66,9 @@ type BooksState = {
   toast: string | null;
   conflictNumbers: number[] | null;
   conflictKeys: DirtyKey[] | null;
-  refreshVouchers: () => Promise<{ ok: true } | { ok: false; message: string } | { ok: "dirty" }>;
+  refreshVouchers: () => Promise<{ ok: true } | { ok: false; message: string }>;
   forceRefreshVouchers: () => Promise<{ ok: true } | { ok: false; message: string }>;
+  removeDrafts: () => Promise<{ ok: true; cleared: number } | { ok: false; message: string }>;
   dismissConflict: () => void;
   clearToast: () => void;
   loadVoucherSummary: () => Promise<void>;
@@ -92,6 +94,54 @@ function applySnapshot(
     credentialsFound: snap.credentialsFound,
     ...(lastError !== undefined ? { lastError } : {}),
   });
+}
+
+async function runSimpleRefresh(
+  set: (partial: Partial<BooksState>) => void,
+  get: () => BooksState,
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  try {
+    await get().ensureReady();
+    set({ refreshBusy: true, conflictNumbers: null, conflictKeys: null });
+    // Owner lock: always force-style pull. No Keep Local / Discard dialog.
+    const run = isTauriRuntime()
+      ? platformForceRefreshVouchers
+      : async () => {
+          try {
+            return await localForceRefresh();
+          } catch {
+            return localRefreshVouchers();
+          }
+        };
+    let result: RefreshOutcome = await run();
+    if (result.kind === "dirty") {
+      // Fallback if backend still returns dirty: force again once.
+      result = isTauriRuntime()
+        ? await platformForceRefreshVouchers()
+        : await localForceRefresh();
+    }
+    if (result.kind === "dirty") {
+      set({
+        refreshBusy: false,
+        lastError: "Refresh could not clear local drafts. Use Remove drafts, then Refresh.",
+      });
+      return { ok: false as const, message: "Refresh blocked by local drafts." };
+    }
+    await get().loadVoucherSummary();
+    const emptyWarning = !result.imported && Boolean(result.warning);
+    set({
+      refreshBusy: false,
+      toast: emptyWarning ? null : "Data refreshed",
+      lastError: result.warning,
+      conflictNumbers: null,
+      conflictKeys: null,
+    });
+    return { ok: true as const };
+  } catch (err) {
+    const message = invokeErrorMessage(err);
+    set({ refreshBusy: false, lastError: message });
+    return { ok: false as const, message };
+  }
 }
 
 export const useBooks = create<BooksState>((set, get) => ({
@@ -302,63 +352,23 @@ export const useBooks = create<BooksState>((set, get) => ({
       /* keep last summary */
     }
   },
-  refreshVouchers: async () => {
+  refreshVouchers: async () => runSimpleRefresh(set, get),
+  forceRefreshVouchers: async () => runSimpleRefresh(set, get),
+  removeDrafts: async () => {
     try {
       await get().ensureReady();
-      set({ refreshBusy: true, conflictNumbers: null });
-      const run = isTauriRuntime() ? platformRefreshVouchers : async () => localRefreshVouchers();
-      const result: RefreshOutcome = await run();
-      if (result.kind === "dirty") {
-        set({
-          refreshBusy: false,
-          conflictNumbers: result.voucherNumbers,
-          conflictKeys: result.keys ?? result.voucherNumbers.map((n) => ({ kind: "voucher", key: String(n) })),
-        });
-        return { ok: "dirty" as const };
-      }
+      const cleared = await clearLocalDrafts();
       await get().loadVoucherSummary();
-      const emptyWarning = !result.imported && Boolean(result.warning);
       set({
-        refreshBusy: false,
-        toast: emptyWarning ? null : "Data refreshed",
-        lastError: result.warning,
         conflictNumbers: null,
+        conflictKeys: null,
+        toast: cleared > 0 ? `Removed ${cleared} draft(s)` : "No drafts on this PC",
+        lastError: null,
       });
-      return { ok: true as const };
+      return { ok: true as const, cleared };
     } catch (err) {
       const message = invokeErrorMessage(err);
-      set({ refreshBusy: false, lastError: message });
-      return { ok: false as const, message };
-    }
-  },
-  forceRefreshVouchers: async () => {
-    try {
-      await get().ensureReady();
-      set({ refreshBusy: true, conflictNumbers: null });
-      const run = isTauriRuntime()
-        ? platformForceRefreshVouchers
-        : async () => localForceRefresh();
-      const result: RefreshOutcome = await run();
-      if (result.kind === "dirty") {
-        set({
-          refreshBusy: false,
-          conflictNumbers: result.voucherNumbers,
-          conflictKeys: result.keys ?? result.voucherNumbers.map((n) => ({ kind: "voucher", key: String(n) })),
-        });
-        return { ok: false as const, message: "Unsynced local changes are still on this PC." };
-      }
-      await get().loadVoucherSummary();
-      const emptyWarning = !result.imported && Boolean(result.warning);
-      set({
-        refreshBusy: false,
-        toast: emptyWarning ? null : "Data refreshed",
-        lastError: result.warning,
-        conflictNumbers: null,
-      });
-      return { ok: true as const };
-    } catch (err) {
-      const message = invokeErrorMessage(err);
-      set({ refreshBusy: false, lastError: message });
+      set({ lastError: message });
       return { ok: false as const, message };
     }
   },

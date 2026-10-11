@@ -70,6 +70,7 @@ export function listDirtyKeys(): Array<{ kind: string; key: string }> {
     { kind: "purchase", sql: "SELECT po_number AS key FROM purchase_po WHERE COALESCE(is_dirty,0) = 1 AND TRIM(po_number) != ''" },
     { kind: "payment", sql: "SELECT pay_number AS key FROM purchase_payments WHERE COALESCE(is_dirty,0) = 1 AND TRIM(pay_number) != ''" },
     { kind: "salary", sql: "SELECT salary_number AS key FROM hr_payroll WHERE COALESCE(is_dirty,0) = 1 AND TRIM(COALESCE(salary_number,'')) != ''" },
+    { kind: "sales_po", sql: "SELECT po_number || '@' || project AS key FROM sales_po WHERE COALESCE(is_dirty,0) = 1" },
     { kind: "inventory", sql: "SELECT 'INV-' || id AS key FROM inventory WHERE COALESCE(is_dirty,0) = 1" },
     { kind: "logistics", sql: "SELECT 'TRIP-' || id AS key FROM logistics WHERE COALESCE(is_dirty,0) = 1" },
     { kind: "document", sql: "SELECT 'DOC-' || id AS key FROM documents WHERE COALESCE(is_dirty,0) = 1" },
@@ -107,6 +108,38 @@ function deleteDirtyInTx(): void {
   exec("DELETE FROM vouchers WHERE COALESCE(is_dirty, dirty, 0) = 1");
 }
 
+/** Owner lock: clear local-only drafts (dirty rows + outbox). One action, no Keep/Discard dialog. */
+export function removeDrafts(): number {
+  let cleared = 0;
+  withTransaction(() => {
+    const before = listDirtyKeys().length;
+    deleteDirtyInTx();
+    const tables: string[] = [
+      "DELETE FROM purchase_payments WHERE COALESCE(is_dirty,0) = 1",
+      "DELETE FROM purchase_po WHERE COALESCE(is_dirty,0) = 1",
+      "DELETE FROM sales_po WHERE COALESCE(is_dirty,0) = 1",
+      "DELETE FROM hr_payroll WHERE COALESCE(is_dirty,0) = 1",
+      "DELETE FROM inventory WHERE COALESCE(is_dirty,0) = 1",
+      "DELETE FROM logistics WHERE COALESCE(is_dirty,0) = 1",
+      "DELETE FROM documents WHERE COALESCE(is_dirty,0) = 1",
+    ];
+    for (const sql of tables) {
+      try {
+        exec(sql);
+      } catch {
+        /* table/column may be mid-migration */
+      }
+    }
+    try {
+      exec("DELETE FROM pending_submit");
+    } catch {
+      /* optional */
+    }
+    cleared = before;
+  });
+  return cleared;
+}
+
 export function discardDirtyVouchers(): void {
   withTransaction(() => {
     deleteDirtyInTx();
@@ -136,11 +169,13 @@ function applyParsed(parsed: ParseReport, discardDirty: boolean): RefreshOutcome
       return;
     }
 
-    const dirtySet = new Set(
-      all<{ voucher_number: number }>(
-        "SELECT voucher_number FROM vouchers WHERE COALESCE(is_dirty, dirty, 0) = 1",
-      ).map((row) => Number(row.voucher_number)),
-    );
+    const dirtySet = discardDirty
+      ? new Set<number>()
+      : new Set(
+          all<{ voucher_number: number }>(
+            "SELECT voucher_number FROM vouchers WHERE COALESCE(is_dirty, dirty, 0) = 1",
+          ).map((row) => Number(row.voucher_number)),
+        );
 
     let imported = 0;
     for (const row of parsed.vouchers) {
@@ -183,7 +218,7 @@ function applyParsed(parsed: ParseReport, discardDirty: boolean): RefreshOutcome
           status = excluded.status,
           tax_flag = excluded.tax_flag,
           updated_at = excluded.updated_at
-        WHERE COALESCE(vouchers.is_dirty, vouchers.dirty, 0) = 0`,
+        WHERE COALESCE(vouchers.is_dirty, vouchers.dirty, 0) = 0 OR ? = 1`,
         [
           row.voucher_number,
           row.voucher_date,
@@ -203,6 +238,7 @@ function applyParsed(parsed: ParseReport, discardDirty: boolean): RefreshOutcome
           computed.remaining,
           computed.status,
           computed.tax_flag,
+          discardDirty ? 1 : 0,
         ],
       );
       exec("DELETE FROM voucher_payments WHERE voucher_number = ?", [row.voucher_number]);
@@ -270,7 +306,8 @@ function applyParsed(parsed: ParseReport, discardDirty: boolean): RefreshOutcome
 }
 
 export function applyVoucherRows(parsed: ParseReport): RefreshOutcome {
-  return applyParsed(parsed, false);
+  // Owner lock: simple read always overwrites voucher register from sheet.
+  return applyParsed(parsed, true);
 }
 
 export function applyVoucherRowsDiscardingDirty(parsed: ParseReport): RefreshOutcome {
@@ -370,10 +407,9 @@ export function getVoucher(voucherNumber: number): VoucherView {
   };
 }
 
+/** Simple path: never return dirty — always force-style pull when credentials exist. */
 export function refreshVouchers(): RefreshOutcome {
   if (!isBrowserOnline()) throw new Error(OFFLINE_VOUCHER_REFRESH_ERROR);
-  const dirty = dirtyGuard();
-  if (dirty) return { kind: "dirty", voucherNumbers: dirty, keys: listDirtyKeys() };
   throw new Error(CREDENTIALS_MISSING_ERROR);
 }
 
@@ -415,4 +451,15 @@ export async function reloadVoucher(voucherNumber: number): Promise<VoucherView>
   }
   if (!isBrowserOnline()) throw new Error(OFFLINE_SUBMIT_ERROR);
   throw new Error(CREDENTIALS_MISSING_ERROR);
+}
+
+export async function clearLocalDrafts(): Promise<number> {
+  if (isTauriRuntime()) {
+    try {
+      return await invokeCommand<number>("remove_drafts");
+    } catch {
+      return removeDrafts();
+    }
+  }
+  return removeDrafts();
 }
