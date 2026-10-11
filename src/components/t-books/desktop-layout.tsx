@@ -13,6 +13,7 @@ import {
   Search,
   Settings,
   ShoppingCart,
+  Trash2,
   Truck,
   Users,
   Wallet,
@@ -25,7 +26,6 @@ import { useBooks } from "@/lib/t-books/store";
 import type { NavId, SearchHit, Session } from "@/lib/t-books/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { ConflictModal } from "./conflict-modal";
 import { GlobalSearch } from "./global-search";
 import { Monogram } from "./monogram";
 import { RefreshToast } from "./refresh-toast";
@@ -71,12 +71,9 @@ export const DesktopLayout = memo(function DesktopLayout({
   const online = useBooks((s) => s.online);
   const refreshBusy = useBooks((s) => s.refreshBusy);
   const toast = useBooks((s) => s.toast);
-  const conflictNumbers = useBooks((s) => s.conflictNumbers);
-  const conflictKeys = useBooks((s) => s.conflictKeys);
   const voucherSummary = useBooks((s) => s.voucherSummary);
   const refreshVouchers = useBooks((s) => s.refreshVouchers);
-  const forceRefreshVouchers = useBooks((s) => s.forceRefreshVouchers);
-  const dismissConflict = useBooks((s) => s.dismissConflict);
+  const removeDrafts = useBooks((s) => s.removeDrafts);
   const clearToast = useBooks((s) => s.clearToast);
   const showRefresh = canRefresh(session.role);
   const dirty = voucherSummary?.dirty ?? 0;
@@ -106,7 +103,7 @@ export const DesktopLayout = memo(function DesktopLayout({
                   type="button"
                   onClick={() => onNavigate(item.id)}
                   className={cn(
-                    "pressable flex h-10 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-sm",
+                    "flex h-10 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-sm",
                     isActive
                       ? "bg-navy text-paper-raised"
                       : "text-ink-muted hover:bg-paper-sunken hover:text-ink",
@@ -132,17 +129,28 @@ export const DesktopLayout = memo(function DesktopLayout({
         <StatusBanners />
         <header className="flex h-12 items-center gap-3 border-b border-line px-4">
           <GlobalSearch onOpen={onSearchOpen} />
-          <div className="ml-auto flex min-w-0 items-center gap-3">
+          <div className="ml-auto flex min-w-0 items-center gap-2">
             {showRefresh ? (
               <>
                 {dirty > 0 ? (
-                  <p className="hidden text-xs text-gold lg:block">{dirty} unsynced</p>
+                  <p className="hidden text-xs text-gold lg:block">{dirty} draft(s)</p>
                 ) : null}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={refreshBusy}
+                  title="Clear local drafts (unsynced rows on this PC)"
+                  onClick={() => void removeDrafts()}
+                >
+                  <Trash2 className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+                  Remove drafts
+                </Button>
                 <Button
                   size="sm"
                   variant="secondary"
                   disabled={refreshBusy || !online}
                   aria-busy={refreshBusy}
+                  title="Pull Google sheet into this PC (simple read)"
                   onClick={() => void refreshVouchers()}
                 >
                   <RefreshCw
@@ -168,7 +176,7 @@ export const DesktopLayout = memo(function DesktopLayout({
                 type="button"
                 onClick={() => onNavigate(item.id)}
                 className={cn(
-                  "pressable h-11 shrink-0 rounded-md px-3 text-sm",
+                  "h-11 shrink-0 rounded-md px-3 text-sm",
                   isActive ? "bg-navy text-paper-raised" : "text-ink-muted",
                 )}
               >
@@ -179,23 +187,6 @@ export const DesktopLayout = memo(function DesktopLayout({
         </nav>
         <main className="min-w-0 flex-1 overflow-auto">{children}</main>
       </div>
-      {conflictNumbers && conflictNumbers.length > 0 ? (
-        <ConflictModal
-          voucherNumbers={conflictNumbers}
-          keys={conflictKeys}
-          busy={refreshBusy}
-          onKeepLocal={dismissConflict}
-          onDiscard={() => void forceRefreshVouchers()}
-        />
-      ) : conflictKeys && conflictKeys.length > 0 ? (
-        <ConflictModal
-          voucherNumbers={[]}
-          keys={conflictKeys}
-          busy={refreshBusy}
-          onKeepLocal={dismissConflict}
-          onDiscard={() => void forceRefreshVouchers()}
-        />
-      ) : null}
       {toast ? <RefreshToast message={toast} onDone={clearToast} /> : null}
     </div>
   );
