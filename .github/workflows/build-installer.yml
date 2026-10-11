@@ -36,16 +36,45 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Fix tauri::Manager import (window.state)
+      - name: Fix desktop compile (Manager + close handler)
         shell: bash
         run: |
-          if ! grep -q 'use tauri::Manager;' src-tauri/src/lib.rs; then
-            sed -i 's/use std::sync::Mutex;/use std::sync::Mutex;\n    use tauri::Manager;/' src-tauri/src/lib.rs
-            echo "Patched Manager import"
-          else
-            echo "Manager already imported"
-          fi
-          grep -n 'use tauri::Manager' src-tauri/src/lib.rs
+          python - <<'PY'
+          from pathlib import Path
+          p = Path("src-tauri/src/lib.rs")
+          t = p.read_text(encoding="utf-8")
+          if "use tauri::Manager;" not in t:
+              t = t.replace(
+                  "use std::sync::Mutex;\n",
+                  "use std::sync::Mutex;\n    use tauri::Manager;\n",
+                  1,
+              )
+          old = """            .on_window_event(|window, event| {
+                if let tauri::WindowEvent::CloseRequested { .. } = event {
+                    let state: tauri::State<AppState> = window.state();
+                    if let Ok(books) = state.books.lock() {
+                        let _ = crate::auto_backup(&books);
+                    }
+                }
+            })"""
+          new = """            .on_window_event(|window, event| {
+                if let tauri::WindowEvent::CloseRequested { .. } = event {
+                    if let Some(state) = window.try_state::<AppState>() {
+                        if let Ok(books) = state.books.lock() {
+                            let _ = crate::auto_backup(&books);
+                        }
+                    }
+                }
+            })"""
+          if old in t:
+              t = t.replace(old, new, 1)
+              print("patched close handler")
+          else:
+              print("close handler already patched or missing")
+          p.write_text(t, encoding="utf-8")
+          assert "use tauri::Manager;" in t
+          print("ok")
+          PY
 
       - name: Refuse secrets in the tree
         shell: bash
