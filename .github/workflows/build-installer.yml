@@ -22,6 +22,8 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
 
       - name: Install NSIS
         run: choco install nsis -y
@@ -45,8 +47,24 @@ jobs:
       - name: Build frontend (Vite for Tauri)
         run: npm run build:tauri
 
+      - name: Show frontend dist
+        shell: bash
+        run: ls -la dist/client | head -30
+
       - name: Build Tauri + NSIS installer
-        run: npx tauri build --ci
+        shell: bash
+        run: |
+          set -o pipefail
+          npx tauri build --ci 2>&1 | tee tauri-build.log
+          exit ${PIPESTATUS[0]}
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tauri-build-log
+          path: tauri-build.log
+          if-no-files-found: warn
 
       - name: Rename installer to T-Books-Setup.exe
         run: node scripts/rename-installer.mjs
