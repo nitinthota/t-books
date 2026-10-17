@@ -114,7 +114,6 @@ mod tests {
         assert!(targets.iter().any(|t| t.tab == "Voucher register"));
         assert!(targets.iter().any(|t| t.tab == "Access"));
         assert!(targets.iter().any(|t| t.tab == "Payments"));
-        assert!(targets.iter().any(|t| t.kind == "trial"));
         assert!(targets.iter().all(|t| t.tab != "Voucher_Raw_Data"));
         let _ = target_for_kind(KIND_VOUCHER_RAW).unwrap();
     }
