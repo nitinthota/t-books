@@ -2,7 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { formatRupees, paymentAllocationLabel, paymentClassLabel, paymentMatchesFilters, paymentOrdinal, rupeesToPaise, shouldPostPurchaseBill, type PaymentFilterKey } from "@/lib/t-books/business_rules";
+import {
+  formatRupees,
+  paymentMatchesFilters,
+  rupeesToPaise,
+  shouldPostPurchaseBill,
+  type PaymentFilterKey,
+} from "@/lib/t-books/business_rules";
 import {
   deletePurchasePayment,
   deletePurchasePo,
@@ -22,6 +28,32 @@ import { ModuleFrame, SuggestField } from "./module-frame";
 import { draftsFromItems, emptyItem, parseItemDrafts, PoItemsEditor, type ItemDraft } from "./po-items-editor";
 import { TableCell, TableHeadCell, VirtualTable } from "./virtual-table";
 import { useRegisterUnsaved, useUnsaved } from "./unsaved-guard";
+
+function paymentOrdinal(n: number): string {
+  const v = Math.max(1, Math.floor(n));
+  const mod100 = v % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${v}th payment`;
+  switch (v % 10) {
+    case 1:
+      return `${v}st payment`;
+    case 2:
+      return `${v}nd payment`;
+    case 3:
+      return `${v}rd payment`;
+    default:
+      return `${v}th payment`;
+  }
+}
+
+function paymentClassLabel(value: string | undefined): string {
+  return (value || "").trim() || "\u2014";
+}
+
+function paymentAllocationLabel(method: string | undefined, poNumber: string): string {
+  const m = (method || "").trim();
+  if (m) return m;
+  return poNumber ? `Against ${poNumber}` : "\u2014";
+}
 
 type Draft = {
   id: number | null;
@@ -316,7 +348,7 @@ export default function PurchaseScreen({
               </Button>
             </div>
             {!canSubmitBill ? (
-              <p className="text-xs text-ink-muted">Submit the bill after goods received and a total above zero.</p>
+              <p className="mt-2 text-xs text-ink-muted">Submit the bill after goods received and a total above zero.</p>
             ) : null}
           </div>
         }
