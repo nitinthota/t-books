@@ -50,7 +50,6 @@ jobs:
                   "use std::sync::Mutex;\n    use tauri::Manager;\n",
                   1,
               )
-          # Do not regex-rewrite braces; source is already close-handler safe.
           p.write_text(t, encoding="utf-8")
           assert "use tauri::Manager;" in t, "Manager import missing"
           print("compile patches ok")
@@ -66,6 +65,9 @@ jobs:
 
       - name: Build frontend (Vite for Tauri)
         run: npm run build:tauri
+
+      - name: Assert UI bundle present
+        run: node scripts/assert-tauri-ui.mjs
 
       - name: Build Tauri + NSIS installer
         shell: bash
