@@ -2,13 +2,13 @@
   "version": 1,
   "validatedAgainst": "Sheet hive plan structure agent bc-2a7edae8-704c-4c15-b8d8-edd6451f48f4",
   "rawSource": {
-    "name": "Loopbooks — Voucher register",
-    "spreadsheetId": "1E6x0sHC6Ft9ZivTDH1ujP4aZ5jClu7-0-ropXZHAK7s",
-    "tab": "Voucher register",
+    "name": "ARCHIVE — Voucher_Raw_Data (read-only)",
+    "spreadsheetId": "1J9ZuNL1uZ7DmqOGIZojuOCMeYp9VnC-SEow6YG86cgE",
+    "tab": "Voucher_Raw_Data",
     "gid": 0,
     "write": false,
-    "layout": "register",
-    "note": "Read-only rawSource marker. Live writes use workbooks.voucher_register."
+    "layout": "raw",
+    "note": "Legacy archive only. App reads/writes Loopbooks workbooks below."
   },
   "rootFolder": {
     "name": "Loopbooks hive",
@@ -36,7 +36,7 @@
       "title": "Loopbooks — Payments",
       "id": "1dtS1d9h6mb0LkEVpJemW2-7I2hGMj6TWDfBApmARMNA",
       "folderKey": "books",
-      "kind": "voucher_payment",
+      "kind": "payment",
       "tab": "Payments",
       "write": true
     },
