@@ -21,6 +21,7 @@ jobs:
           git checkout 5e90e8396cff31acd7793d579a95ce23d9ba5d33 -- src-tauri/src/lib.rs
           python3 - <<'PY'
           from pathlib import Path
+          import re
           p = Path("src-tauri/src/lib.rs")
           t = p.read_text(encoding="utf-8")
           if "use tauri::Manager;" not in t:
@@ -29,27 +30,25 @@ jobs:
                   "use std::sync::Mutex;\n    use tauri::Manager;\n",
                   1,
               )
-          old = """            .on_window_event(|window, event| {
-                if let tauri::WindowEvent::CloseRequested { .. } = event {
-                    let state: tauri::State<AppState> = window.state();
-                    if let Ok(books) = state.books.lock() {
-                        let _ = crate::auto_backup(&books);
-                    }
-                }
-            })"""
-          new = """            .on_window_event(|_window, _event| {
-                // Close-time auto-backup: use Settings → Backup (build-stable)
-            })"""
-          if old in t:
-              t = t.replace(old, new, 1)
-              print("close handler patched")
-          else:
-              print("close handler already safe or different")
+          t2, n = re.subn(
+              r"\.on_window_event\(\|window, event\| \{[\s\S]*?\n            \}",
+              ".on_window_event(|_window, _event| {\n                // Close-time auto-backup: use Settings → Backup (build-stable)\n            })",
+              t,
+              count=1,
+          )
+          print("close-handler replacements:", n)
+          t = t2
+          # Strip any remaining window.state in this file (desktop only used it in close handler)
+          t = t.replace(
+              "let state: tauri::State<AppState> = window.state();",
+              "let Some(state) = window.try_state::<AppState>() else { return; };",
+          )
           p.write_text(t, encoding="utf-8")
-          assert "mod access" in t
-          assert "generate_handler" in t
-          assert "window.state()" not in t
+          assert "mod access" in t, "missing mod access"
+          assert "generate_handler" in t, "missing generate_handler"
+          assert "pub fn run()" in t, "missing run()"
           print("lib.rs size", len(t))
+          print("window.state count", t.count("window.state()"))
           PY
 
       - name: Commit and push
