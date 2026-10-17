@@ -5,10 +5,24 @@ import { getPurchasePo, listPurchasePayments, listPurchasePo, savePurchasePo, su
 import { invokeErrorMessage } from "@/lib/t-books/platform";
 import type { PurchasePayment, PurchasePo, VoucherListRow } from "@/lib/t-books/types";
 import { loadVoucherList } from "@/lib/t-books/vouchers";
+import { DeskChips } from "./desk-chips";
 import { DeskSearch } from "./desk-search";
 import { ModuleFrame } from "./module-frame";
 import { draftsFromItems, parseItemDrafts, PoItemsEditor, type ItemDraft } from "./po-items-editor";
 import { TableCell, TableHeadCell, VirtualTable } from "./virtual-table";
+
+type PurchaseFilter =
+  | "all"
+  | "due"
+  | "unpaid"
+  | "paid"
+  | "missing_tax"
+  | "not_received"
+  | "dirty"
+  | "contract"
+  | "simple";
+
+type ObjectFacet = "overview" | "lines" | "payments" | "related";
 
 export default function PurchaseDesk({
   onBack,
@@ -33,9 +47,8 @@ export default function PurchaseDesk({
   const [lines, setLines] = useState<ItemDraft[]>([]);
   const [busy, setBusy] = useState(false);
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<
-    "all" | "due" | "unpaid" | "paid" | "missing_tax" | "not_received" | "dirty" | "contract" | "simple"
-  >("all");
+  const [filter, setFilter] = useState<PurchaseFilter>("all");
+  const [facet, setFacet] = useState<ObjectFacet>("overview");
 
   const reload = useCallback(async () => {
     try {
@@ -63,6 +76,7 @@ export default function PurchaseDesk({
     const id = Number(focusId);
     if (Number.isFinite(id) && id > 0) void openCard(id);
     else setQuery(focusId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusId]);
 
   async function openCard(id: number) {
@@ -71,6 +85,7 @@ export default function PurchaseDesk({
       const po = await getPurchasePo(id);
       setCard(po);
       setLines(draftsFromItems(po.items ?? []));
+      setFacet("overview");
       setError(null);
     } catch (err) {
       setError(invokeErrorMessage(err));
@@ -189,10 +204,15 @@ export default function PurchaseDesk({
       ? vouchers.filter((row) => row.project.trim().toLowerCase() === jobKey)
       : [];
     const due = card.totalValue - (card.paidRupees ?? 0);
+    const lineCount = lines.filter((row) => row.description.trim()).length || lines.length;
+
     return (
       <ModuleFrame
         title={card.poNumber || "Purchase bill"}
-        onBack={() => setCard(null)}
+        onBack={() => {
+          setCard(null);
+          setFacet("overview");
+        }}
         error={error}
         actions={
           <div className="flex gap-2">
@@ -200,116 +220,159 @@ export default function PurchaseDesk({
               {busy ? "Saving\u2026" : "Save draft"}
             </Button>
             <Button onClick={() => void postBill()} disabled={busy}>
-              Post bill
+              {busy ? "Posting\u2026" : "Post"}
             </Button>
-            <Button variant="ghost" onClick={() => onEdit(card.id)}>Full edit</Button>
+            <Button variant="ghost" onClick={() => onEdit(card.id)}>
+              Full edit
+            </Button>
           </div>
         }
       >
-        <div className="grid gap-3 sm:grid-cols-3">
-          <Count label="Lines" value={String(lines.filter((row) => row.description.trim()).length || lines.length)} />
-          <Count label="Payments" value={String(billPays.length)} />
-          <Count label="Still to pay" value={formatRupees(due)} />
+        <div className="grid gap-3 sm:grid-cols-4">
+          <Kpi label="Value" value={formatRupees(card.totalValue)} />
+          <Kpi label="Paid" value={formatRupees(card.paidRupees ?? 0)} />
+          <Kpi label="Still to pay" value={formatRupees(due)} accent />
+          <Kpi label="Payments" value={String(billPays.length)} />
         </div>
-        <dl className="mt-6 grid gap-3 text-sm sm:grid-cols-2">
-          <Fact
-            label="Project"
-            value={card.project}
-            onOpen={card.project && onOpenProject ? () => onOpenProject(card.project) : undefined}
-          />
-          <Fact
-            label="Vendor"
-            value={card.vendor}
-            onOpen={card.vendor && onOpenVendor ? () => onOpenVendor(card.vendor) : undefined}
-          />
-          <Fact label="Type" value={card.type === "simple" ? "Project expenses" : "Techsol purchase"} />
-          <Fact label="Status" value={card.payStatus || "Unpaid"} />
-          <Fact label="Value" value={formatRupees(card.totalValue)} />
-          <Fact label="Paid" value={formatRupees(card.paidRupees ?? 0)} />
-        </dl>
-        <div className="mt-6">
-          <PoItemsEditor items={lines} onChange={setLines} />
+
+        <div className="mt-5 flex flex-wrap gap-2" role="tablist" aria-label="Purchase sections">
+          {(
+            [
+              ["overview", "Overview"],
+              ["lines", `Lines ${lineCount}`],
+              ["payments", `Payments ${billPays.length}`],
+              ["related", `Related ${relatedVouchers.length}`],
+            ] as const
+          ).map(([id, label]) => {
+            const on = facet === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={on}
+                onClick={() => setFacet(id)}
+                className={
+                  on
+                    ? "pressable h-9 rounded-full bg-navy px-3 text-xs text-white"
+                    : "pressable h-9 rounded-full bg-paper-raised px-3 text-xs text-ink-muted ring-1 ring-line"
+                }
+              >
+                {label}
+              </button>
+            );
+          })}
         </div>
-        <div className="mt-6">
-          <p className="text-xs uppercase tracking-wide text-ink-subtle">Payments</p>
-          {billPays.length === 0 ? (
-            <p className="mt-2 text-sm text-ink-muted">No payment on this bill yet.</p>
-          ) : (
-            <ul className="mt-2 divide-y divide-line rounded-lg bg-paper-raised ring-1 ring-line">
-              {billPays.map((p, i) => (
-                <li key={p.payNumber} className="flex justify-between px-3 py-2 text-sm">
-                  <span>
-                    {p.payNumber}
-                    <span className="ml-2 text-ink-muted">{paymentOrdinal(i + 1)}</span>
-                  </span>
-                  <span className="tabular-nums">{formatRupees(p.amountRupees)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-        <div className="mt-6">
-          <p className="text-xs uppercase tracking-wide text-ink-subtle">Vouchers on this job</p>
-          {relatedVouchers.length === 0 ? (
-            <p className="mt-2 text-sm text-ink-muted">No voucher on this job yet.</p>
-          ) : (
-            <ul className="mt-2 divide-y divide-line rounded-lg bg-paper-raised ring-1 ring-line">
-              {relatedVouchers.map((row) => (
-                <li key={row.voucherNumber} className="flex justify-between px-3 py-2 text-sm">
-                  <span>{row.voucherNumber}</span>
-                  <span className="text-ink-muted">{row.vendor}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+
+        {facet === "overview" ? (
+          <dl className="mt-6 grid gap-3 text-sm sm:grid-cols-2">
+            <Fact
+              label="Project"
+              value={card.project}
+              onOpen={card.project && onOpenProject ? () => onOpenProject(card.project) : undefined}
+            />
+            <Fact
+              label="Vendor"
+              value={card.vendor}
+              onOpen={card.vendor && onOpenVendor ? () => onOpenVendor(card.vendor) : undefined}
+            />
+            <Fact
+              label="Type"
+              value={card.type === "simple" ? "Project expenses" : "Techsol purchase"}
+            />
+            <Fact label="Status" value={card.payStatus || "Unpaid"} />
+            <Fact label="Tax invoice" value={card.taxInvoiceNo || "\u2014"} />
+            <Fact label="Goods received" value={card.goodsReceived ? "Yes" : "No"} />
+          </dl>
+        ) : null}
+
+        {facet === "lines" ? (
+          <div className="mt-6">
+            <PoItemsEditor items={lines} onChange={setLines} />
+          </div>
+        ) : null}
+
+        {facet === "payments" ? (
+          <div className="mt-6">
+            {billPays.length === 0 ? (
+              <p className="text-sm text-ink-muted">No payment on this bill yet.</p>
+            ) : (
+              <ul className="divide-y divide-line rounded-lg bg-paper-raised ring-1 ring-line">
+                {billPays.map((p, i) => (
+                  <li key={p.payNumber} className="flex justify-between px-3 py-2 text-sm">
+                    <span>
+                      {p.payNumber}
+                      <span className="ml-2 text-ink-muted">{paymentOrdinal(i + 1)}</span>
+                    </span>
+                    <span className="tabular-nums">{formatRupees(p.amountRupees)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ) : null}
+
+        {facet === "related" ? (
+          <div className="mt-6">
+            <p className="text-xs uppercase tracking-wide text-ink-subtle">Vouchers on this job</p>
+            {relatedVouchers.length === 0 ? (
+              <p className="mt-2 text-sm text-ink-muted">No voucher on this job yet.</p>
+            ) : (
+              <ul className="mt-2 divide-y divide-line rounded-lg bg-paper-raised ring-1 ring-line">
+                {relatedVouchers.map((row) => (
+                  <li key={row.voucherNumber} className="flex justify-between px-3 py-2 text-sm">
+                    <span>{row.voucherNumber}</span>
+                    <span className="text-ink-muted">{row.vendor}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ) : null}
       </ModuleFrame>
     );
   }
 
   return (
-    <ModuleFrame title="Purchase" onBack={onBack} error={error} actions={<Button onClick={onNew}>New bill</Button>}>
-      <DeskSearch value={query} onChange={setQuery} placeholder="Bill, job, vendor" label="Search purchase" />
-      <div className="mb-4 flex flex-wrap gap-2" role="tablist" aria-label="Purchase filters">
-        {(
-          [
-            ["all", "All bills", counts.all],
-            ["due", "Still to pay", counts.due],
-            ["unpaid", "No payment", counts.unpaid],
-            ["paid", "Settled", counts.paid],
-            ["missing_tax", "No tax invoice", counts.missing_tax],
-            ["not_received", "Not received", counts.not_received],
-            ["dirty", "Not posted", counts.dirty],
-            ["contract", "Techsol Purchase", counts.contract],
-            ["simple", "Project Expenses", counts.simple],
-          ] as const
-        ).map(([id, label, count]) => {
-          const on = filter === id;
-          return (
-            <button
-              key={id}
-              type="button"
-              role="tab"
-              aria-selected={on}
-              onClick={() => setFilter(id)}
-              className={
-                on
-                  ? "pressable rounded-md bg-navy px-3 py-1.5 text-xs text-white"
-                  : "pressable rounded-md px-3 py-1.5 text-xs text-ink-muted ring-1 ring-line"
-              }
-            >
-              {label} {count}
-            </button>
-          );
-        })}
-      </div>
+    <ModuleFrame
+      title="Purchase"
+      onBack={onBack}
+      error={error}
+      actions={<Button onClick={onNew}>New bill</Button>}
+    >
+      <DeskSearch
+        value={query}
+        onChange={setQuery}
+        placeholder="Bill, job, vendor"
+        label="Search purchase"
+      />
+      <DeskChips
+        label="Purchase filters"
+        value={filter}
+        onChange={setFilter}
+        items={[
+          { id: "all", label: "All bills", count: counts.all },
+          { id: "due", label: "Still to pay", count: counts.due },
+          { id: "unpaid", label: "No payment", count: counts.unpaid },
+          { id: "paid", label: "Settled", count: counts.paid },
+          { id: "missing_tax", label: "No tax invoice", count: counts.missing_tax },
+          { id: "not_received", label: "Not received", count: counts.not_received },
+          { id: "dirty", label: "Not posted", count: counts.dirty },
+          { id: "contract", label: "Techsol Purchase", count: counts.contract },
+          { id: "simple", label: "Project Expenses", count: counts.simple },
+        ]}
+      />
       <div className="overflow-hidden rounded-lg bg-paper-raised ring-1 ring-line">
         <VirtualTable
           rows={visible}
           rowKey={(row) => row.id}
           empty={
             <p className="text-sm text-ink-muted">
-              {rows === null ? "Opening purchase\u2026" : job || filter !== "all" ? "No bill matches." : "No purchase bills yet."}
+              {rows === null
+                ? "Opening purchase\u2026"
+                : job || filter !== "all"
+                  ? "No bill matches."
+                  : "No purchase bills yet."}
             </p>
           }
           header={
@@ -323,7 +386,7 @@ export default function PurchaseDesk({
           }
           renderRow={(row) => (
             <tr className="table-row cursor-pointer" onClick={() => void openCard(row.id)}>
-              <TableCell className="font-mono">{row.poNumber}</TableCell>
+              <TableCell className="font-mono font-medium">{row.poNumber}</TableCell>
               <TableCell className="text-ink-muted">{row.project || "\u2014"}</TableCell>
               <TableCell className="text-ink-muted">{row.vendor || "\u2014"}</TableCell>
               <TableCell className="text-right tabular-nums">{formatRupees(row.totalValue)}</TableCell>
@@ -336,11 +399,11 @@ export default function PurchaseDesk({
   );
 }
 
-function Count({ label, value }: { label: string; value: string }) {
+function Kpi({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
     <div className="rounded-lg bg-paper-raised p-4 ring-1 ring-line">
       <p className="text-xs text-ink-subtle">{label}</p>
-      <p className="money-figure mt-1 text-2xl">{value}</p>
+      <p className={`money-figure mt-1 text-2xl ${accent ? "text-navy" : ""}`}>{value}</p>
     </div>
   );
 }
