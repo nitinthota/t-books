@@ -38,17 +38,12 @@ jobs:
           )
           print("close-handler replacements:", n)
           t = t2
-          # Strip any remaining window.state in this file (desktop only used it in close handler)
-          t = t.replace(
-              "let state: tauri::State<AppState> = window.state();",
-              "let Some(state) = window.try_state::<AppState>() else { return; };",
-          )
           p.write_text(t, encoding="utf-8")
           assert "mod access" in t, "missing mod access"
           assert "generate_handler" in t, "missing generate_handler"
           assert "pub fn run()" in t, "missing run()"
+          assert "window.state()" not in t, "window.state still present"
           print("lib.rs size", len(t))
-          print("window.state count", t.count("window.state()"))
           PY
 
       - name: Commit and push
