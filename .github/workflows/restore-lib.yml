@@ -1,0 +1,67 @@
+name: Restore lib.rs
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Restore lib.rs from good commit + safe close handler
+        shell: bash
+        run: |
+          set -euo pipefail
+          git checkout 5e90e8396cff31acd7793d579a95ce23d9ba5d33 -- src-tauri/src/lib.rs
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("src-tauri/src/lib.rs")
+          t = p.read_text(encoding="utf-8")
+          if "use tauri::Manager;" not in t:
+              t = t.replace(
+                  "use std::sync::Mutex;\n",
+                  "use std::sync::Mutex;\n    use tauri::Manager;\n",
+                  1,
+              )
+          old = """            .on_window_event(|window, event| {
+                if let tauri::WindowEvent::CloseRequested { .. } = event {
+                    let state: tauri::State<AppState> = window.state();
+                    if let Ok(books) = state.books.lock() {
+                        let _ = crate::auto_backup(&books);
+                    }
+                }
+            })"""
+          new = """            .on_window_event(|_window, _event| {
+                // Close-time auto-backup: use Settings → Backup (build-stable)
+            })"""
+          if old in t:
+              t = t.replace(old, new, 1)
+              print("close handler patched")
+          else:
+              print("close handler already safe or different")
+          p.write_text(t, encoding="utf-8")
+          assert "mod access" in t
+          assert "generate_handler" in t
+          assert "window.state()" not in t
+          print("lib.rs size", len(t))
+          PY
+
+      - name: Commit and push
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src-tauri/src/lib.rs
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "Restore full lib.rs with build-stable close handler"
+          git push origin HEAD:main
