@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { formatRupees, paymentMatchesFilters, type PaymentFilterKey } from "@/lib/t-books/business_rules";
+import { formatRupees, paymentAllocationLabel, paymentClassLabel, paymentMatchesFilters, paymentOrdinal, rupeesToPaise, shouldPostPurchaseBill, type PaymentFilterKey } from "@/lib/t-books/business_rules";
 import {
   deletePurchasePayment,
   deletePurchasePo,
@@ -13,9 +13,10 @@ import {
   listVendors,
   savePurchasePayment,
   savePurchasePo,
+  submitOffice,
 } from "@/lib/t-books/office";
 import { invokeErrorMessage } from "@/lib/t-books/platform";
-import type { PurchasePayment, PurchasePo } from "@/lib/t-books/types";
+import type { PurchasePayment, PurchasePo, PurchaseType } from "@/lib/t-books/types";
 import { cn } from "@/lib/utils";
 import { ModuleFrame, SuggestField } from "./module-frame";
 import { draftsFromItems, emptyItem, parseItemDrafts, PoItemsEditor, type ItemDraft } from "./po-items-editor";
@@ -27,6 +28,7 @@ type Draft = {
   project: string;
   vendor: string;
   poNumber: string;
+  type: PurchaseType;
   totalValue: string;
   goodsReceived: boolean;
   taxInvoiceNo: string;
@@ -41,12 +43,18 @@ const FILTERS: { key: PaymentFilterKey; label: string }[] = [
   { key: "missing_tax", label: "Missing Tax Inv" },
 ];
 
+const TYPE_LABELS: Record<PurchaseType, string> = {
+  contract: "Techsol Purchase",
+  simple: "Project Expenses",
+};
+
 function blankDraft(): Draft {
   return {
     id: null,
     project: "",
     vendor: "",
     poNumber: "",
+    type: "contract",
     totalValue: "0",
     goodsReceived: false,
     taxInvoiceNo: "",
@@ -61,6 +69,7 @@ function fromPo(po: PurchasePo): Draft {
     project: po.project,
     vendor: po.vendor,
     poNumber: po.poNumber,
+    type: po.type,
     totalValue: String(po.totalValue ?? 0),
     goodsReceived: Boolean(po.goodsReceived),
     taxInvoiceNo: po.taxInvoiceNo ?? "",
@@ -89,6 +98,11 @@ export default function PurchaseScreen({
   const [filters, setFilters] = useState<PaymentFilterKey[]>([]);
   const [payAmount, setPayAmount] = useState("");
   const dirty = mode === "edit" && JSON.stringify(draft) !== JSON.stringify(saved);
+  const canSubmitBill = shouldPostPurchaseBill({
+    goodsReceived: draft.goodsReceived,
+    grandPaise: rupeesToPaise(Number(draft.totalValue) || 0),
+    converted: false,
+  });
 
   const reload = useCallback(async () => {
     try {
@@ -122,9 +136,9 @@ export default function PurchaseScreen({
   }, [focusId]);
 
   const writeBill = useCallback(async () => {
-    const items = parseItemDrafts(draft.items);
+    const items = draft.type === "simple" ? [] : parseItemDrafts(draft.items);
     const totalValue = Number(draft.totalValue);
-    if (draft.totalValue.trim() && !Number.isFinite(totalValue)) {
+    if (draft.type === "simple" && draft.totalValue.trim() && !Number.isFinite(totalValue)) {
       throw new Error("Total must be a number.");
     }
     const savedPo = await savePurchasePo({
@@ -132,7 +146,7 @@ export default function PurchaseScreen({
       project: draft.project,
       vendor: draft.vendor,
       poNumber: draft.poNumber,
-      type: "simple",
+      type: draft.type,
       totalValue: Number.isFinite(totalValue) ? totalValue : 0,
       items,
       goodsReceived: draft.goodsReceived,
@@ -200,6 +214,37 @@ export default function PurchaseScreen({
     }
   }
 
+  async function onSubmitBill() {
+    setBusy(true);
+    try {
+      const po = await writeBill();
+      const out = await submitOffice("purchase", po.poNumber);
+      if (out.kind === "conflict") setError(out.message);
+      else await reload();
+    } catch (err) {
+      setError(invokeErrorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onSubmitPay(payNumber: string) {
+    if (!payNumber.trim()) {
+      setError("Save the payment first so it has a PAY number.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const out = await submitOffice("payment", payNumber);
+      if (out.kind === "conflict") setError(out.message);
+      else await reload();
+    } catch (err) {
+      setError(invokeErrorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function onAddPay() {
     if (!draft.poNumber) {
       setError("Save the bill first so it has a PUR number.");
@@ -248,23 +293,51 @@ export default function PurchaseScreen({
     });
   }, [rows, payments, filters]);
 
-  const billPays = payments.filter((p) => p.poNumber.toLowerCase() === draft.poNumber.toLowerCase());
+  const billPays = payments
+    .filter((p) => p.poNumber.toLowerCase() === draft.poNumber.toLowerCase())
+    .slice()
+    .sort((a, b) => (a.id ?? 0) - (b.id ?? 0));
 
   if (mode === "edit") {
     return (
       <ModuleFrame
-        title={draft.id ? "Edit purchase bill" : "New bill"}
-        hint="One form. No contract/simple layer. Save writes this PC. Blank number becomes PUR-0001."
+        title={draft.id ? "Edit purchase bill" : "New purchase bill"}
+        hint="Save writes this PC only. Submit sends one hive row. Blank number becomes PUR-0001."
         onBack={() => requestLeave(() => setMode("list"))}
         error={error}
         actions={
-          <Button variant="secondary" onClick={() => void onSaveStay()} disabled={busy}>
-            {busy ? "Saving…" : "Save"}
-          </Button>
+          <div className="flex flex-col items-end gap-1">
+            <div className="flex gap-2">
+              <Button variant="secondary" onClick={() => void onSaveStay()} disabled={busy}>
+                {busy ? "Saving\u2026" : "Save"}
+              </Button>
+              <Button onClick={() => void onSubmitBill()} disabled={busy || !canSubmitBill}>
+                Submit
+              </Button>
+            </div>
+            {!canSubmitBill ? (
+              <p className="text-xs text-ink-muted">Submit the bill after goods received and a total above zero.</p>
+            ) : null}
+          </div>
         }
       >
         <div className="rounded-lg bg-paper-raised p-5 ring-1 ring-line">
           <p className="text-xs font-medium uppercase tracking-wide text-ink-subtle">Bill</p>
+          <div className="mt-3 flex gap-2">
+            {(["contract", "simple"] as const).map((kind) => (
+              <button
+                key={kind}
+                type="button"
+                className={cn(
+                  "pressable h-11 rounded-md px-4 text-sm",
+                  draft.type === kind ? "bg-navy text-paper-raised" : "bg-paper-sunken text-ink-muted",
+                )}
+                onClick={() => setDraft({ ...draft, type: kind })}
+              >
+                {TYPE_LABELS[kind]}
+              </button>
+            ))}
+          </div>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <SuggestField
               id="pur-project"
@@ -292,16 +365,18 @@ export default function PurchaseScreen({
                 onChange={(e) => setDraft({ ...draft, poNumber: e.target.value })}
               />
             </div>
-            <div>
-              <Label htmlFor="pur-total">Total</Label>
-              <Input
-                id="pur-total"
-                className="mt-1.5"
-                inputMode="decimal"
-                value={draft.totalValue}
-                onChange={(e) => setDraft({ ...draft, totalValue: e.target.value })}
-              />
-            </div>
+            {draft.type === "simple" ? (
+              <div>
+                <Label htmlFor="pur-total">Total</Label>
+                <Input
+                  id="pur-total"
+                  className="mt-1.5"
+                  inputMode="decimal"
+                  value={draft.totalValue}
+                  onChange={(e) => setDraft({ ...draft, totalValue: e.target.value })}
+                />
+              </div>
+            ) : null}
             <div>
               <Label htmlFor="pur-tax">Tax invoice</Label>
               <Input
@@ -329,12 +404,16 @@ export default function PurchaseScreen({
             />
             Goods received
           </label>
-          <div className="ledger-rule my-5" />
-          <PoItemsEditor items={draft.items} onChange={(items) => setDraft({ ...draft, items })} />
+          {draft.type === "contract" ? (
+            <>
+              <div className="ledger-rule my-5" />
+              <PoItemsEditor items={draft.items} onChange={(items) => setDraft({ ...draft, items })} />
+            </>
+          ) : null}
           {draft.poNumber ? (
             <>
               <div className="ledger-rule my-5" />
-              <p className="text-xs font-medium uppercase tracking-wide text-ink-subtle">PAY payments</p>
+              <p className="text-xs font-medium uppercase tracking-wide text-ink-subtle">Payments on this bill</p>
               <div className="mt-3 flex flex-col gap-2 sm:flex-row">
                 <Input
                   inputMode="decimal"
@@ -347,17 +426,26 @@ export default function PurchaseScreen({
                 </Button>
               </div>
               <ul className="mt-3 space-y-2 text-sm">
-                {billPays.map((p) => (
+                {billPays.map((p, i) => (
                   <li key={p.id} className="flex items-center justify-between rounded-md bg-paper-sunken px-3 py-2">
-                    <span className="font-mono">
-                      {p.payNumber} · {formatRupees(p.amountRupees)} · {p.payClass}
+                    <span>
+                      <span className="font-medium">{paymentOrdinal(i + 1)}</span>
+                      <span className="ml-2 font-mono text-ink-muted">
+                        {p.payNumber} · {formatRupees(p.amountRupees)} · {paymentClassLabel(p.payClass)} ·{" "}
+                        {paymentAllocationLabel(p.allocMethod, p.poNumber)}
+                      </span>
                     </span>
-                    <Button size="sm" variant="ghost" onClick={() => void deletePurchasePayment(p.id!).then(reload)}>
-                      Delete
-                    </Button>
+                    <div className="flex gap-1">
+                      <Button size="sm" variant="secondary" onClick={() => void onSubmitPay(p.payNumber)} disabled={busy}>
+                        Submit
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => void deletePurchasePayment(p.id!).then(reload)}>
+                        Delete
+                      </Button>
+                    </div>
                   </li>
                 ))}
-                {billPays.length === 0 ? <li className="text-ink-muted">No PAY rows on this bill yet.</li> : null}
+                {billPays.length === 0 ? <li className="text-ink-muted">No payments on this bill yet.</li> : null}
               </ul>
             </>
           ) : null}
@@ -369,7 +457,7 @@ export default function PurchaseScreen({
   return (
     <ModuleFrame
       title="Purchase"
-      hint="One New bill path. No contract/simple layer. Refresh does not change these rows."
+      hint="PUR bills and PAY bank payments on this PC. Submit writes Loopbooks — Purchase orders. Refresh does not change these rows."
       onBack={() => requestLeave(onBack)}
       error={error}
       actions={<Button onClick={openNew}>New bill</Button>}
@@ -382,7 +470,7 @@ export default function PurchaseScreen({
               key={f.key}
               type="button"
               className={cn(
-                "h-11 rounded-md px-3 text-sm",
+                "pressable h-11 rounded-md px-3 text-sm",
                 on ? "bg-navy text-paper-raised" : "bg-paper-sunken text-ink-muted",
               )}
               onClick={() =>
@@ -400,7 +488,7 @@ export default function PurchaseScreen({
           rowKey={(row) => row.id}
           empty={
             <p className="text-sm text-ink-muted">
-              {rows === null ? "Opening purchase bills on this PC…" : "No purchase bills on this PC yet."}
+              {rows === null ? "Opening purchase bills on this PC\u2026" : "No purchase bills on this PC yet."}
             </p>
           }
           header={
@@ -415,7 +503,7 @@ export default function PurchaseScreen({
           renderRow={(row) => (
             <tr className="table-row">
               <TableCell className="font-mono">{row.poNumber}</TableCell>
-              <TableCell className="text-ink-muted">{row.vendor || "—"}</TableCell>
+              <TableCell className="text-ink-muted">{row.vendor || "\u2014"}</TableCell>
               <TableCell className="text-ink-muted">{row.payStatus || "Unpaid"}</TableCell>
               <TableCell className="text-right tabular-nums">{formatRupees(row.totalValue)}</TableCell>
               <TableCell>
