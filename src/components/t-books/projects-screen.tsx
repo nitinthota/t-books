@@ -4,6 +4,8 @@ import { listInventory, listLogistics, listProjects, listPurchasePo, listSalesPo
 import { invokeErrorMessage } from "@/lib/t-books/platform";
 import type { InventoryRow, LogisticsRow, NavId, PurchasePo, SalesPo, VoucherListRow } from "@/lib/t-books/types";
 import { loadVoucherList } from "@/lib/t-books/vouchers";
+import { DeskChips } from "./desk-chips";
+import { DeskSearch } from "./desk-search";
 import { ModuleFrame } from "./module-frame";
 import { TableCell, TableHeadCell, VirtualTable } from "./virtual-table";
 
@@ -24,6 +26,7 @@ type ProjectRollup = {
 };
 
 type JobFilter = "all" | "due" | "paid" | "sales" | "purchase" | "trips" | "empty";
+type ObjectFacet = "overview" | "documents" | "parties";
 
 function jobWord(row: ProjectRollup): string {
   if (row.due > 0.5) return "Still to pay";
@@ -72,6 +75,7 @@ export default function ProjectsScreen({
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<JobFilter>("all");
   const [openName, setOpenName] = useState<string | null>(focusId?.trim() || null);
+  const [facet, setFacet] = useState<ObjectFacet>("overview");
 
   const reload = useCallback(async () => {
     try {
@@ -101,7 +105,10 @@ export default function ProjectsScreen({
   }, [reload]);
 
   useEffect(() => {
-    if (focusId?.trim()) setOpenName(focusId.trim());
+    if (focusId?.trim()) {
+      setOpenName(focusId.trim());
+      setFacet("overview");
+    }
   }, [focusId]);
 
   const rows: ProjectRollup[] = useMemo(() => {
@@ -125,7 +132,9 @@ export default function ProjectsScreen({
       const customerPo = s.reduce((sum, row) => sum + (row.totalValue || 0), 0);
       const vendors = [
         ...new Set(
-          [...v.map((row) => row.vendor), ...p.map((row) => row.vendor)].map((name) => name.trim()).filter(Boolean),
+          [...v.map((row) => row.vendor), ...p.map((row) => row.vendor)]
+            .map((name) => name.trim())
+            .filter(Boolean),
         ),
       ].sort((a, b) => a.localeCompare(b));
       return {
@@ -164,7 +173,8 @@ export default function ProjectsScreen({
     const q = query.trim().toLowerCase();
     return rows.filter((row) => {
       if (!matchesFilter(row, filter)) return false;
-      if (q && !row.project.toLowerCase().includes(q) && !row.vendors.some((v) => v.toLowerCase().includes(q))) return false;
+      if (q && !row.project.toLowerCase().includes(q) && !row.vendors.some((v) => v.toLowerCase().includes(q)))
+        return false;
       return true;
     });
   }, [rows, query, filter]);
@@ -173,126 +183,165 @@ export default function ProjectsScreen({
 
   if (open) {
     return (
-      <ModuleFrame title={open.project} hint="Job file. Counts open that book for this job only." onBack={() => setOpenName(null)} error={error}>
-        <p className="text-sm text-ink-muted">{jobWord(open)}</p>
-        <dl className="mt-4 grid gap-3 sm:grid-cols-4 text-sm">
-          <Money label="Billed" value={formatRupees(open.billed)} />
-          <Money label="Paid" value={formatRupees(open.paid)} />
-          <Money label="Still to pay" value={formatRupees(open.due)} />
-          <Money label="Customer PO" value={formatRupees(open.customerPo)} />
-        </dl>
-        <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <CountCard label="Vouchers" value={String(open.vouchers)} onClick={() => onOpen?.("vouchers", open.project)} />
-          <CountCard label="Purchase bills" value={String(open.purchaseCount)} onClick={() => onOpen?.("purchase", open.project)} />
-          <CountCard label="Sales orders" value={String(open.salesCount)} onClick={() => onOpen?.("sales", open.project)} />
-          <CountCard label="Trips" value={String(open.tripCount)} onClick={() => onOpen?.("logistics", open.project)} />
-          <CountCard label="Stock lines" value={String(open.stockCount)} onClick={() => onOpen?.("inventory", open.project)} />
-          <CountCard label="Vendors" value={String(open.vendors.length)} />
+      <ModuleFrame
+        title={open.project}
+        onBack={() => {
+          setOpenName(null);
+          setFacet("overview");
+        }}
+        error={error}
+      >
+        <div className="grid gap-3 sm:grid-cols-4">
+          <Kpi label="Billed" value={formatRupees(open.billed)} />
+          <Kpi label="Paid" value={formatRupees(open.paid)} />
+          <Kpi label="Still to pay" value={formatRupees(open.due)} accent />
+          <Kpi label="Customer PO" value={formatRupees(open.customerPo)} />
         </div>
-        <Section title="Purchase bills on this job">
-          {open.bills.length === 0 ? (
-            <p className="mt-2 text-sm text-ink-muted">No purchase bill on this job yet.</p>
-          ) : (
-            <ul className="mt-2 divide-y divide-line rounded-lg bg-paper-raised ring-1 ring-line">
-              {open.bills.map((bill) => (
-                <li key={bill.id}>
-                  <button type="button" className="pressable flex w-full items-center justify-between px-3 py-2.5 text-left text-sm" onClick={() => onOpen?.("purchase", bill.poNumber || open.project)}>
-                    <span>
-                      {bill.poNumber || "PUR"}
-                      <span className="ml-2 text-ink-muted">{bill.vendor}</span>
-                    </span>
-                    <span className="tabular-nums">{formatRupees(bill.totalValue)}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Section>
-        <Section title="Sales orders on this job">
-          {open.orders.length === 0 ? (
-            <p className="mt-2 text-sm text-ink-muted">No sales order on this job yet.</p>
-          ) : (
-            <ul className="mt-2 divide-y divide-line rounded-lg bg-paper-raised ring-1 ring-line">
-              {open.orders.map((order) => (
-                <li key={order.id}>
-                  <button type="button" className="pressable flex w-full items-center justify-between px-3 py-2.5 text-left text-sm" onClick={() => onOpen?.("sales", order.poNumber || open.project)}>
-                    <span>
-                      {order.poNumber || "SAL"}
-                      <span className="ml-2 text-ink-muted">{order.client}</span>
-                    </span>
-                    <span className="tabular-nums">{formatRupees(order.totalValue)}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Section>
-        <Section title="Vendors on this job">
-          {open.vendors.length === 0 ? (
-            <p className="mt-2 text-sm text-ink-muted">No vendor on this job yet.</p>
-          ) : (
-            <ul className="mt-2 divide-y divide-line rounded-lg bg-paper-raised ring-1 ring-line">
-              {open.vendors.map((vendor) => (
-                <li key={vendor}>
-                  <button type="button" className="pressable w-full px-3 py-2.5 text-left text-sm" onClick={() => onOpen?.("vendors", vendor)}>
-                    {vendor}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Section>
+        <p className="mt-3 text-sm text-ink-muted">{jobWord(open)}</p>
+
+        <div className="mt-5 flex flex-wrap gap-2" role="tablist" aria-label="Job sections">
+          {(
+            [
+              ["overview", "Overview"],
+              ["documents", "Documents"],
+              ["parties", `Vendors ${open.vendors.length}`],
+            ] as const
+          ).map(([id, label]) => {
+            const on = facet === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={on}
+                onClick={() => setFacet(id)}
+                className={
+                  on
+                    ? "pressable h-9 rounded-full bg-navy px-3 text-xs text-white"
+                    : "pressable h-9 rounded-full bg-paper-raised px-3 text-xs text-ink-muted ring-1 ring-line"
+                }
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+
+        {facet === "overview" ? (
+          <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <CountCard label="Vouchers" value={String(open.vouchers)} onClick={() => onOpen?.("vouchers", open.project)} />
+            <CountCard label="Purchase bills" value={String(open.purchaseCount)} onClick={() => onOpen?.("purchase", open.project)} />
+            <CountCard label="Sales orders" value={String(open.salesCount)} onClick={() => onOpen?.("sales", open.project)} />
+            <CountCard label="Trips" value={String(open.tripCount)} onClick={() => onOpen?.("logistics", open.project)} />
+            <CountCard label="Stock lines" value={String(open.stockCount)} onClick={() => onOpen?.("inventory", open.project)} />
+            <CountCard label="Vendors" value={String(open.vendors.length)} />
+          </div>
+        ) : null}
+
+        {facet === "documents" ? (
+          <div className="mt-6 space-y-6">
+            <Section title="Purchase bills">
+              {open.bills.length === 0 ? (
+                <p className="mt-2 text-sm text-ink-muted">No purchase bill on this job yet.</p>
+              ) : (
+                <ul className="mt-2 divide-y divide-line rounded-lg bg-paper-raised ring-1 ring-line">
+                  {open.bills.map((bill) => (
+                    <li key={bill.id}>
+                      <button
+                        type="button"
+                        className="pressable flex w-full items-center justify-between px-3 py-2.5 text-left text-sm"
+                        onClick={() => onOpen?.("purchase", bill.poNumber || open.project)}
+                      >
+                        <span>
+                          {bill.poNumber || "PUR"}
+                          <span className="ml-2 text-ink-muted">{bill.vendor}</span>
+                        </span>
+                        <span className="tabular-nums">{formatRupees(bill.totalValue)}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Section>
+            <Section title="Sales orders">
+              {open.orders.length === 0 ? (
+                <p className="mt-2 text-sm text-ink-muted">No sales order on this job yet.</p>
+              ) : (
+                <ul className="mt-2 divide-y divide-line rounded-lg bg-paper-raised ring-1 ring-line">
+                  {open.orders.map((order) => (
+                    <li key={order.id}>
+                      <button
+                        type="button"
+                        className="pressable flex w-full items-center justify-between px-3 py-2.5 text-left text-sm"
+                        onClick={() => onOpen?.("sales", order.poNumber || open.project)}
+                      >
+                        <span>
+                          {order.poNumber || "SAL"}
+                          <span className="ml-2 text-ink-muted">{order.client}</span>
+                        </span>
+                        <span className="tabular-nums">{formatRupees(order.totalValue)}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Section>
+          </div>
+        ) : null}
+
+        {facet === "parties" ? (
+          <div className="mt-6">
+            {open.vendors.length === 0 ? (
+              <p className="text-sm text-ink-muted">No vendor on this job yet.</p>
+            ) : (
+              <ul className="divide-y divide-line rounded-lg bg-paper-raised ring-1 ring-line">
+                {open.vendors.map((vendor) => (
+                  <li key={vendor}>
+                    <button
+                      type="button"
+                      className="pressable w-full px-3 py-2.5 text-left text-sm text-navy"
+                      onClick={() => onOpen?.("vendors", vendor)}
+                    >
+                      {vendor}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ) : null}
       </ModuleFrame>
     );
   }
 
-  const chips: Array<{ id: JobFilter; label: string; count: number }> = [
-    { id: "all", label: "All jobs", count: counts.all },
-    { id: "due", label: "Still to pay", count: counts.due },
-    { id: "paid", label: "Settled", count: counts.paid },
-    { id: "sales", label: "Customer PO", count: counts.sales },
-    { id: "purchase", label: "Purchase bills", count: counts.purchase },
-    { id: "trips", label: "Trips", count: counts.trips },
-    { id: "empty", label: "Name only", count: counts.empty },
-  ];
-
   return (
-    <ModuleFrame title="Projects" hint="Job master. Open a job to see money, bills, trips, and stock." onBack={onBack} error={error}>
-      <input
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="Job or vendor"
-        aria-label="Search jobs"
-        className="mb-3 h-11 w-full max-w-md rounded-md bg-paper-raised px-3 text-sm ring-1 ring-line"
+    <ModuleFrame title="Projects" onBack={onBack} error={error}>
+      <DeskSearch value={query} onChange={setQuery} placeholder="Job or vendor" label="Search jobs" />
+      <DeskChips
+        label="Job filters"
+        value={filter}
+        onChange={setFilter}
+        items={[
+          { id: "all", label: "All jobs", count: counts.all },
+          { id: "due", label: "Still to pay", count: counts.due },
+          { id: "paid", label: "Settled", count: counts.paid },
+          { id: "sales", label: "Customer PO", count: counts.sales },
+          { id: "purchase", label: "Purchase bills", count: counts.purchase },
+          { id: "trips", label: "Trips", count: counts.trips },
+          { id: "empty", label: "Name only", count: counts.empty },
+        ]}
       />
-      <div className="mb-4 flex flex-wrap gap-2" role="tablist" aria-label="Job filters">
-        {chips.map((chip) => {
-          const on = filter === chip.id;
-          return (
-            <button
-              key={chip.id}
-              type="button"
-              role="tab"
-              aria-selected={on}
-              onClick={() => setFilter(chip.id)}
-              className={
-                on
-                  ? "pressable rounded-md bg-navy px-3 py-1.5 text-xs text-white"
-                  : "pressable rounded-md px-3 py-1.5 text-xs text-ink-muted ring-1 ring-line"
-              }
-            >
-              {chip.label} {chip.count}
-            </button>
-          );
-        })}
-      </div>
       <div className="overflow-hidden rounded-lg bg-paper-raised ring-1 ring-line">
         <VirtualTable
           rows={visible}
           rowKey={(row) => row.project}
           empty={
             <p className="text-sm text-ink-muted">
-              {names === null ? "Opening jobs\u2026" : query.trim() || filter !== "all" ? "No job matches." : "No jobs yet."}
+              {names === null
+                ? "Opening jobs\u2026"
+                : query.trim() || filter !== "all"
+                  ? "No job matches."
+                  : "No jobs yet."}
             </p>
           }
           header={
@@ -306,24 +355,39 @@ export default function ProjectsScreen({
           }
           renderRow={(row) => (
             <tr
-              className={row.project === focused ? "table-row cursor-pointer bg-navy-soft" : "table-row cursor-pointer"}
+              className={
+                row.project === focused
+                  ? "table-row cursor-pointer bg-navy-soft"
+                  : "table-row cursor-pointer"
+              }
               onClick={() => setOpenName(row.project)}
             >
               <TableCell>
-                {row.project}
+                <span className="font-medium">{row.project}</span>
                 <span className="mt-0.5 block text-xs text-ink-muted">
                   {row.vouchers} vouchers \u00b7 {row.vendors.length} vendors
                 </span>
               </TableCell>
               <TableCell className="text-ink-muted">{jobWord(row)}</TableCell>
               <TableCell className="text-right tabular-nums">{row.purchaseCount}</TableCell>
-              <TableCell className="text-right tabular-nums">{formatRupees(row.due)}</TableCell>
+              <TableCell className="text-right tabular-nums text-navy">
+                {formatRupees(row.due)}
+              </TableCell>
               <TableCell className="text-right tabular-nums">{formatRupees(row.customerPo)}</TableCell>
             </tr>
           )}
         />
       </div>
     </ModuleFrame>
+  );
+}
+
+function Kpi({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+  return (
+    <div className="rounded-lg bg-paper-raised p-4 ring-1 ring-line">
+      <p className="text-xs text-ink-subtle">{label}</p>
+      <p className={`money-figure mt-1 text-2xl ${accent ? "text-navy" : ""}`}>{value}</p>
+    </div>
   );
 }
 
@@ -344,24 +408,19 @@ function CountCard({
   );
   if (!onClick) return <div className="rounded-lg bg-paper-raised p-4 ring-1 ring-line">{inner}</div>;
   return (
-    <button type="button" className="pressable rounded-lg bg-paper-raised p-4 text-left ring-1 ring-line" onClick={onClick}>
+    <button
+      type="button"
+      className="pressable rounded-lg bg-paper-raised p-4 text-left ring-1 ring-line"
+      onClick={onClick}
+    >
       {inner}
     </button>
   );
 }
 
-function Money({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <dt className="text-xs uppercase tracking-wide text-ink-subtle">{label}</dt>
-      <dd className="mt-1 text-ink">{value}</dd>
-    </div>
-  );
-}
-
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="mt-6">
+    <div>
       <p className="text-xs uppercase tracking-wide text-ink-subtle">{title}</p>
       {children}
     </div>

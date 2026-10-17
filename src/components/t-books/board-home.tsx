@@ -102,7 +102,7 @@ export const BoardHome = memo(function BoardHome({
   }
 
   async function dropOne(row: DirtyKey) {
-    if (!window.confirm(`Remove unsaved ${row.kind} ${row.key}?`)) return;
+    if (!window.confirm(`Remove draft ${row.kind} ${row.key}?`)) return;
     try {
       if (isTauriRuntime()) {
         await invokeCommand("discard_dirty_key", { kind: row.kind, key: row.key });
@@ -151,7 +151,7 @@ export const BoardHome = memo(function BoardHome({
   }
 
   async function dropAll() {
-    if (!window.confirm("Remove every unsaved draft?")) return;
+    if (!window.confirm("Remove every draft?")) return;
     try {
       if (isTauriRuntime()) {
         await invokeCommand("discard_all_dirty");
@@ -181,65 +181,163 @@ export const BoardHome = memo(function BoardHome({
       {lastError ? (
         <p className="mb-4 text-sm text-gold">Refresh failed. The last figures are kept.</p>
       ) : null}
-      <form onSubmit={(e) => void onAsk(e)} className="mb-6">
-        <label className="block text-xs uppercase tracking-wide text-ink-subtle" htmlFor="board-ask">
-          Search
-        </label>
-        <div className="mt-1.5 flex gap-2">
-          <input
-            id="board-ask"
-            value={askText}
-            onChange={(e) => setAskText(e.target.value)}
-            placeholder="Search"
-            className="h-11 flex-1 rounded-md bg-paper-raised px-3 text-sm ring-1 ring-line"
-          />
-          <button type="submit" className="pressable h-11 rounded-md bg-navy px-4 text-sm text-white" disabled={looking}>
-            {looking ? "Looking\u2026" : "Look"}
-          </button>
-        </div>
-      </form>
-      <p className="text-xs text-ink-subtle">{summary?.lastSynced ? `Last refreshed ${summary.lastSynced}` : "Not refreshed yet."}</p>
-      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <Tile label="Vouchers" value={String(voucherCount)} hint={`${formatRupees(voucherDue)} still to pay`} onClick={() => onOpen("vouchers")} />
-        <Tile label="Purchase bills" value={String(bills.length)} hint={`${formatRupees(purchaseDue)} unpaid`} onClick={() => onOpen("purchase")} />
-        <Tile label="Sales orders" value={String(orders.length)} hint={`${formatRupees(salesBalance)} balance`} onClick={() => onOpen("sales")} />
-        <Tile label="Jobs" value={String(jobCount)} onClick={() => onOpen("projects")} />
-        <Tile label="Vendors" value={String(vendorCount)} onClick={() => onOpen("vendors")} />
-        <Tile label="Not posted" value={String(unsynced)} hint={unsynced ? "Unsaved drafts" : "All posted"} gold={unsynced > 0} onClick={() => onOpen(keys[0] ? navForDirty(keys[0].kind) : "vouchers")} />
-      </div>
-      {postNote ? <p className="mt-4 text-sm text-ink-muted">{postNote}</p> : null}
-      {keys.length > 0 ? (
-        <div className="mt-6 rounded-lg bg-paper-raised p-4 ring-1 ring-line">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-xs font-medium uppercase tracking-wide text-ink-subtle">Not posted</p>
-            <div className="flex gap-2">
-              <button type="button" className="pressable rounded-md bg-navy px-3 py-1 text-xs text-white" disabled={posting} onClick={() => void postAll()}>{posting ? "Posting\u2026" : "Post all"}</button>
-              <button type="button" className="pressable rounded-md px-3 py-1 text-xs text-ink-muted ring-1 ring-line" onClick={() => void dropAll()}>Remove all</button>
-            </div>
+
+      <section className="mb-8">
+        <h2 className="text-xs font-medium uppercase tracking-wide text-ink-subtle">Search</h2>
+        <form onSubmit={(e) => void onAsk(e)} className="mt-2">
+          <div className="flex gap-2">
+            <input
+              id="board-ask"
+              value={askText}
+              onChange={(e) => setAskText(e.target.value)}
+              placeholder="Search"
+              aria-label="Board search"
+              className="h-11 flex-1 rounded-md bg-paper-raised px-3 text-sm ring-1 ring-line"
+            />
+            <button
+              type="submit"
+              className="pressable h-11 rounded-md bg-navy px-4 text-sm text-white"
+              disabled={looking}
+            >
+              {looking ? "Looking\u2026" : "Look"}
+            </button>
           </div>
-          <ul className="mt-2 max-h-48 overflow-auto text-sm">
-            {keys.map((k) => (
-              <li key={`${k.kind}-${k.key}`} className="flex items-center gap-2">
-                <button type="button" className="pressable min-w-0 flex-1 py-1 text-left" onClick={() => onOpen(navForDirty(k.kind), k.key)}>{k.kind} {k.key}</button>
-                <button type="button" className="pressable shrink-0 rounded-md px-2 py-1 text-xs text-ink-muted ring-1 ring-line" onClick={() => void dropOne(k)}>Remove</button>
+        </form>
+        {ask && hits && hits.length > 0 ? (
+          <ul className="mt-3 max-h-40 overflow-auto rounded-lg bg-paper-raised ring-1 ring-line text-sm">
+            {hits.slice(0, 12).map((hit, i) => (
+              <li key={`${hit.kind}-${hit.key}-${i}`}>
+                <button
+                  type="button"
+                  className="pressable flex w-full justify-between px-3 py-2 text-left"
+                  onClick={() => onOpen(navForDirty(hit.kind), hit.key)}
+                >
+                  <span>
+                    {hit.kind} {hit.key}
+                  </span>
+                  <span className="text-ink-muted">{hit.label || ""}</span>
+                </button>
               </li>
             ))}
           </ul>
+        ) : null}
+      </section>
+
+      <section>
+        <div className="flex items-baseline justify-between gap-3">
+          <h2 className="text-xs font-medium uppercase tracking-wide text-ink-subtle">Overview</h2>
+          <p className="text-xs text-ink-subtle">
+            {summary?.lastSynced ? `Last refreshed ${summary.lastSynced}` : "Not refreshed yet"}
+          </p>
         </div>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <Tile
+            label="Vouchers"
+            value={String(voucherCount)}
+            hint={`${formatRupees(voucherDue)} still to pay`}
+            onClick={() => onOpen("vouchers")}
+          />
+          <Tile
+            label="Purchase bills"
+            value={String(bills.length)}
+            hint={`${formatRupees(purchaseDue)} unpaid`}
+            onClick={() => onOpen("purchase")}
+          />
+          <Tile
+            label="Sales orders"
+            value={String(orders.length)}
+            hint={`${formatRupees(salesBalance)} balance`}
+            onClick={() => onOpen("sales")}
+          />
+          <Tile label="Jobs" value={String(jobCount)} onClick={() => onOpen("projects")} />
+          <Tile label="Vendors" value={String(vendorCount)} onClick={() => onOpen("vendors")} />
+          <Tile
+            label="Not posted"
+            value={String(unsynced)}
+            hint={unsynced ? "Drafts waiting" : "All posted"}
+            gold={unsynced > 0}
+            onClick={() => onOpen(keys[0] ? navForDirty(keys[0].kind) : "vouchers")}
+          />
+        </div>
+      </section>
+
+      {postNote ? <p className="mt-4 text-sm text-ink-muted">{postNote}</p> : null}
+
+      {keys.length > 0 ? (
+        <section className="mt-8">
+          <div className="rounded-lg bg-paper-raised p-4 ring-1 ring-line">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-xs font-medium uppercase tracking-wide text-ink-subtle">
+                Not posted
+              </h2>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  className="pressable rounded-md bg-navy px-3 py-1 text-xs text-white"
+                  disabled={posting}
+                  onClick={() => void postAll()}
+                >
+                  {posting ? "Posting\u2026" : "Post all"}
+                </button>
+                <button
+                  type="button"
+                  className="pressable rounded-md px-3 py-1 text-xs text-ink-muted ring-1 ring-line"
+                  onClick={() => void dropAll()}
+                >
+                  Remove all
+                </button>
+              </div>
+            </div>
+            <ul className="mt-2 max-h-48 overflow-auto text-sm">
+              {keys.map((k) => (
+                <li key={`${k.kind}-${k.key}`} className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    className="pressable min-w-0 flex-1 py-1 text-left"
+                    onClick={() => onOpen(navForDirty(k.kind), k.key)}
+                  >
+                    {k.kind} {k.key}
+                  </button>
+                  <button
+                    type="button"
+                    className="pressable shrink-0 rounded-md px-2 py-1 text-xs text-ink-muted ring-1 ring-line"
+                    onClick={() => void dropOne(k)}
+                  >
+                    Remove
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
       ) : null}
     </div>
   );
 });
 
 function Tile({
-  label, value, hint, onClick, gold,
+  label,
+  value,
+  hint,
+  onClick,
+  gold,
 }: {
-  label: string; value: string; hint?: string; onClick: () => void; gold?: boolean;
+  label: string;
+  value: string;
+  hint?: string;
+  onClick: () => void;
+  gold?: boolean;
 }) {
   return (
-    <button type="button" onClick={onClick} className="board-card pressable rounded-lg bg-paper-raised p-5 text-left ring-1 ring-line">
+    <button
+      type="button"
+      onClick={onClick}
+      className="board-card pressable rounded-lg bg-paper-raised p-5 text-left ring-1 ring-line"
+    >
       <p className="text-xs text-ink-subtle">{label}</p>
-      <p className={gold ? "money-figure mt-1 text-3xl text-gold" : "money-figure mt-1 text-3xl text-navy"}>{value}</p>
+      <p className={gold ? "money-figure mt-1 text-3xl text-gold" : "money-figure mt-1 text-3xl text-navy"}>
+        {value}
+      </p>
       {hint ? <p className="mt-2 text-sm text-ink-muted">{hint}</p> : null}
     </button>
   );
