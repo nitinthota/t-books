@@ -41,7 +41,6 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
-          import re
           p = Path("src-tauri/src/lib.rs")
           t = p.read_text(encoding="utf-8")
           t = t.replace("\r\n", "\n")
@@ -51,20 +50,7 @@ jobs:
                   "use std::sync::Mutex;\n    use tauri::Manager;\n",
                   1,
               )
-          t2, n = re.subn(
-              r"\.on_window_event\(\|window, event\| \{[\s\S]*?\n            \}",
-              ".on_window_event(|_window, _event| {\n                // Close-time auto-backup: use Settings \u2192 Backup (build-stable)\n            })",
-              t,
-              count=1,
-          )
-          print("close-handler replacements:", n)
-          t = t2
-          if "window.state()" in t:
-              t = t.replace(
-                  "let state: tauri::State<AppState> = window.state();",
-                  "let Some(state) = window.try_state::<AppState>() else { return; };",
-              )
-              print("replaced window.state with try_state")
+          # Do not regex-rewrite braces; source is already close-handler safe.
           p.write_text(t, encoding="utf-8")
           assert "use tauri::Manager;" in t, "Manager import missing"
           print("compile patches ok")
