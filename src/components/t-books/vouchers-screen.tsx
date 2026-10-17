@@ -8,11 +8,15 @@ import { useBooks } from "@/lib/t-books/store";
 import type { PaymentView, VoucherListRow, VoucherSave, VoucherView } from "@/lib/t-books/types";
 import { loadVoucher, loadVoucherList, reloadVoucher, submitVoucher } from "@/lib/t-books/vouchers";
 import { deskLine, deskMark } from "@/lib/t-books/desk-line";
+import { DeskChips } from "./desk-chips";
+import { DeskSearch } from "./desk-search";
 import { ModuleFrame } from "./module-frame";
-import { MoneyHero } from "./money-hero";
 import { RefreshToast } from "./refresh-toast";
 import { SubmitConflictModal } from "./submit-conflict";
 import { TableCell, TableHeadCell, VirtualTable } from "./virtual-table";
+
+type VoucherFilter = "all" | "due" | "partial" | "settled" | "dirty";
+type ObjectFacet = "overview" | "payments";
 
 function emptyPay(slot: number): PaymentView {
   return {
@@ -45,6 +49,15 @@ function draftFrom(view: VoucherView): VoucherSave {
   };
 }
 
+function payOccupied(row: PaymentView): boolean {
+  return (
+    (row.paid ?? 0) !== 0 ||
+    (row.piValue ?? 0) !== 0 ||
+    Boolean(row.paymentDate) ||
+    Boolean(row.piNo)
+  );
+}
+
 export default function VouchersScreen({
   onBack,
   focusId,
@@ -61,9 +74,11 @@ export default function VouchersScreen({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<VoucherSave | null>(null);
   const [query, setQuery] = useState("");
-  const [submitState, setSubmitState] = useState<"idle" | "submitting" | "success" | "conflict" | "error">(
-    "idle",
-  );
+  const [filter, setFilter] = useState<VoucherFilter>("all");
+  const [facet, setFacet] = useState<ObjectFacet>("overview");
+  const [submitState, setSubmitState] = useState<
+    "idle" | "submitting" | "success" | "conflict" | "error"
+  >("idle");
   const [conflictMessage, setConflictMessage] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
@@ -93,6 +108,7 @@ export default function VouchersScreen({
       setOpen(view);
       setDraft(draftFrom(view));
       setEditing(false);
+      setFacet("overview");
       setError(null);
       setSubmitState("idle");
       setConflictMessage(null);
@@ -120,6 +136,7 @@ export default function VouchersScreen({
     setOpen(view);
     setDraft(draftFrom(view));
     setEditing(true);
+    setFacet("overview");
     setError(null);
   }
 
@@ -182,29 +199,48 @@ export default function VouchersScreen({
     }
   }
 
+  const counts = useMemo(() => {
+    const list = rows ?? [];
+    return {
+      all: list.length,
+      due: list.filter((r) => (r.remaining ?? 0) > 0.5).length,
+      partial: list.filter(
+        (r) => (r.totalPaid ?? 0) > 0.5 && (r.remaining ?? 0) > 0.5,
+      ).length,
+      settled: list.filter(
+        (r) => (r.totalValue ?? 0) > 0.5 && (r.remaining ?? 0) <= 0.5,
+      ).length,
+      dirty: list.filter((r) => Boolean(r.isDirty)).length,
+    };
+  }, [rows]);
+
   const visible = useMemo(() => {
     const list = rows ?? [];
     const q = query.trim().toLowerCase();
-    if (!q) return list;
-    return list.filter((row) =>
-      [
-        String(row.voucherNumber),
-        row.vendor,
-        row.project,
-        row.taxInvoice,
-        row.status,
-      ].some((v) => v.toLowerCase().includes(q)),
-    );
-  }, [rows, query]);
+    return list.filter((row) => {
+      if (filter === "due" && !((row.remaining ?? 0) > 0.5)) return false;
+      if (filter === "partial" && !((row.totalPaid ?? 0) > 0.5 && (row.remaining ?? 0) > 0.5))
+        return false;
+      if (filter === "settled" && !((row.totalValue ?? 0) > 0.5 && (row.remaining ?? 0) <= 0.5))
+        return false;
+      if (filter === "dirty" && !row.isDirty) return false;
+      if (!q) return true;
+      return [String(row.voucherNumber), row.vendor, row.project, row.taxInvoice, row.status].some(
+        (v) => (v || "").toLowerCase().includes(q),
+      );
+    });
+  }, [rows, query, filter]);
 
   if (open && draft) {
+    const statusLine = deskLine(open) ?? open.status ?? "";
+    const paymentCount = open.payments.filter(payOccupied).length;
     return (
       <ModuleFrame
         title={`Voucher ${open.voucherNumber}`}
-        hint={deskLine(open) ?? (editing ? "Save stays on this PC. Submit sends this voucher." : open.status || undefined)}
         onBack={() => {
           setOpen(null);
           setEditing(false);
+          setFacet("overview");
         }}
         error={error}
         actions={
@@ -216,87 +252,114 @@ export default function VouchersScreen({
             ) : null}
             {canEdit && editing ? (
               <Button onClick={() => void onSave()} disabled={submitState === "submitting"}>
-                {submitState === "submitting" ? "Saving…" : "Save on this PC"}
+                {submitState === "submitting" ? "Saving\u2026" : "Save draft"}
               </Button>
             ) : null}
             {canSubmit && !editing ? (
               <Button onClick={() => void onSubmit()} disabled={submitState === "submitting"}>
-                {submitState === "submitting" ? "Submitting…" : "Submit to Google"}
+                {submitState === "submitting" ? "Posting\u2026" : "Post"}
               </Button>
             ) : null}
           </>
         }
       >
+        <div className="grid gap-3 sm:grid-cols-4">
+          <Kpi label="Value" value={formatRupees(open.totalValue)} />
+          <Kpi label="Paid" value={formatRupees(open.totalPaid)} />
+          <Kpi label="Still to pay" value={formatRupees(open.remaining)} accent />
+          <Kpi label="Payments" value={String(paymentCount)} />
+        </div>
+
+        {statusLine ? (
+          <p className="mt-4 text-sm text-ink-muted">{statusLine}</p>
+        ) : null}
+
+        {!editing ? (
+          <div className="mt-5 flex flex-wrap gap-2" role="tablist" aria-label="Voucher sections">
+            {(
+              [
+                ["overview", "Overview"],
+                ["payments", `Payments ${paymentCount}`],
+              ] as const
+            ).map(([id, label]) => {
+              const on = facet === id;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  role="tab"
+                  aria-selected={on}
+                  onClick={() => setFacet(id)}
+                  className={
+                    on
+                      ? "pressable h-9 rounded-full bg-navy px-3 text-xs text-white"
+                      : "pressable h-9 rounded-full bg-paper-raised px-3 text-xs text-ink-muted ring-1 ring-line"
+                  }
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+
         {editing ? (
-          <EditForm draft={draft} onChange={setDraft} />
+          <div className="mt-6">
+            <EditForm draft={draft} onChange={setDraft} />
+          </div>
+        ) : facet === "overview" ? (
+          <dl className="mt-6 grid gap-3 text-sm sm:grid-cols-2">
+            <Meta label="Vendor" value={open.vendor} />
+            <Meta label="Project" value={open.project} />
+            <Meta label="Tax invoice" value={open.taxInvoice} />
+            <Meta label="GST" value={open.gst} />
+            <Meta label="Status" value={open.status || deskMark(open) || "\u2014"} />
+            {open.comments ? <Meta label="Comments" value={open.comments} /> : null}
+          </dl>
         ) : (
-          <>
-            <MoneyHero value={open.totalValue} paid={open.totalPaid} remaining={open.remaining} />
-            <dl className="mt-6 grid gap-3 text-sm sm:grid-cols-2">
-              <Meta label="Vendor" value={open.vendor} />
-              <Meta label="Project" value={open.project} />
-              <Meta label="Tax invoice" value={open.taxInvoice} />
-              <Meta label="GST" value={open.gst} />
-            </dl>
-            {open.comments ? <p className="mt-4 text-sm text-ink-muted">{open.comments}</p> : null}
-            <div className="mt-6 overflow-hidden rounded-lg bg-paper-raised ring-1 ring-line">
-              <VirtualTable
-                rows={open.payments}
-                rowKey={(row) => row.slot}
-                empty={<p className="text-sm text-ink-muted">No payments on this voucher.</p>}
-                header={
-                  <tr>
-                    <TableHeadCell>Payment</TableHeadCell>
-                    <TableHeadCell>PI</TableHeadCell>
-                    <TableHeadCell className="text-right">Value</TableHeadCell>
-                    <TableHeadCell className="text-right">Paid</TableHeadCell>
-                    <TableHeadCell className="text-right">Still to pay</TableHeadCell>
-                    <TableHeadCell>Date</TableHeadCell>
+          <div className="mt-6 overflow-hidden rounded-lg bg-paper-raised ring-1 ring-line">
+            <VirtualTable
+              rows={open.payments}
+              rowKey={(row) => row.slot}
+              empty={<p className="text-sm text-ink-muted">No payments on this voucher.</p>}
+              header={
+                <tr>
+                  <TableHeadCell>Payment</TableHeadCell>
+                  <TableHeadCell>PI</TableHeadCell>
+                  <TableHeadCell className="text-right">Value</TableHeadCell>
+                  <TableHeadCell className="text-right">Paid</TableHeadCell>
+                  <TableHeadCell className="text-right">Still to pay</TableHeadCell>
+                  <TableHeadCell>Date</TableHeadCell>
+                </tr>
+              }
+              renderRow={(row) => {
+                const occupied = payOccupied(row);
+                const seq = occupied
+                  ? open.payments.filter((p) => payOccupied(p) && p.slot <= row.slot).length
+                  : 0;
+                return (
+                  <tr className="table-row">
+                    <TableCell className="font-medium">
+                      {occupied ? paymentOrdinal(seq) : `Block ${row.slot}`}
+                    </TableCell>
+                    <TableCell>{row.piNo || "\u2014"}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {formatRupees(row.piValue)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {formatRupees(row.paid)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums text-navy">
+                      {formatRupees(row.remaining)}
+                    </TableCell>
+                    <TableCell className="text-ink-muted">{row.paymentDate || "\u2014"}</TableCell>
                   </tr>
-                }
-                renderRow={(row) => {
-                  const occupied =
-                    (row.paid ?? 0) !== 0 ||
-                    (row.piValue ?? 0) !== 0 ||
-                    Boolean(row.paymentDate) ||
-                    Boolean(row.piNo);
-                  const seq = occupied
-                    ? open.payments.filter((p) => {
-                        const on =
-                          (p.paid ?? 0) !== 0 ||
-                          (p.piValue ?? 0) !== 0 ||
-                          Boolean(p.paymentDate) ||
-                          Boolean(p.piNo);
-                        return on && p.slot <= row.slot;
-                      }).length
-                    : 0;
-                  return (
-                    <tr className="table-row">
-                      <TableCell className="font-medium">
-                        {occupied ? paymentOrdinal(seq) : `Block ${row.slot}`}
-                      </TableCell>
-                      <TableCell>{row.piNo || "—"}</TableCell>
-                      <TableCell className="text-right tabular-nums">{formatRupees(row.piValue)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{formatRupees(row.paid)}</TableCell>
-                      <TableCell className="text-right tabular-nums text-navy">
-                        {formatRupees(row.remaining)}
-                      </TableCell>
-                      <TableCell className="text-ink-muted">{row.paymentDate || "—"}</TableCell>
-                    </tr>
-                  );
-                }}
-              />
-            </div>
-          </>
+                );
+              }}
+            />
+          </div>
         )}
-        {deskLine(open) ? (
-          <p className="mt-4 text-sm text-ink">{deskLine(open)}</p>
-        ) : (
-          <p className="mt-4 text-xs text-ink-subtle">
-            Save stays on this PC. Submit sends this bill and each payment as 1st, 2nd, and so on.
-            At most five payments.
-          </p>
-        )}
+
         {submitState === "success" ? (
           <RefreshToast message={SUBMIT_SUCCESS_TOAST} onDone={() => setSubmitState("idle")} />
         ) : null}
@@ -318,7 +381,6 @@ export default function VouchersScreen({
   return (
     <ModuleFrame
       title="Vouchers"
-      hint="Refresh loads the company copy. Save stays on this PC. Submit sends one voucher."
       onBack={onBack}
       error={error}
       actions={
@@ -329,12 +391,23 @@ export default function VouchersScreen({
         ) : null
       }
     >
-      <input
+      <DeskSearch
         value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="Search number, vendor, project, invoice…"
-        aria-label="Search vouchers"
-        className="mb-4 h-11 w-full max-w-md rounded-md bg-paper-raised px-3 text-sm ring-1 ring-line"
+        onChange={setQuery}
+        placeholder="Number, vendor, project, invoice"
+        label="Search vouchers"
+      />
+      <DeskChips
+        label="Voucher filters"
+        value={filter}
+        onChange={setFilter}
+        items={[
+          { id: "all", label: "All", count: counts.all },
+          { id: "due", label: "Still to pay", count: counts.due },
+          { id: "partial", label: "Partial", count: counts.partial },
+          { id: "settled", label: "Settled", count: counts.settled },
+          { id: "dirty", label: "Not posted", count: counts.dirty },
+        ]}
       />
       <div className="overflow-hidden rounded-lg bg-paper-raised ring-1 ring-line">
         <VirtualTable
@@ -343,10 +416,10 @@ export default function VouchersScreen({
           empty={
             <p className="text-sm text-ink-muted">
               {rows === null
-                ? "Opening the register on this PC…"
-                : query.trim()
-                  ? "No voucher matches that search on this PC."
-                  : "No vouchers on this PC yet. Refresh when online."}
+                ? "Opening vouchers\u2026"
+                : query.trim() || filter !== "all"
+                  ? "No voucher matches."
+                  : "No vouchers yet."}
             </p>
           }
           header={
@@ -366,21 +439,23 @@ export default function VouchersScreen({
               onClick={() => void openVoucher(row.voucherNumber)}
             >
               <TableCell>
-                <span className="tabular-nums">{row.voucherNumber}</span>
+                <span className="tabular-nums font-medium">{row.voucherNumber}</span>
                 {deskMark(row) ? (
                   <span className="ml-2 text-xs text-gold">{deskMark(row)}</span>
-                ) : row.isDirty ? (
-                  <span className="ml-2 text-xs text-gold">On this PC</span>
                 ) : null}
               </TableCell>
-              <TableCell>{row.vendor || "—"}</TableCell>
-              <TableCell className="text-ink-muted">{row.project || "—"}</TableCell>
-              <TableCell className="text-right tabular-nums">{formatRupees(row.totalValue)}</TableCell>
-              <TableCell className="text-right tabular-nums">{formatRupees(row.totalPaid)}</TableCell>
+              <TableCell>{row.vendor || "\u2014"}</TableCell>
+              <TableCell className="text-ink-muted">{row.project || "\u2014"}</TableCell>
+              <TableCell className="text-right tabular-nums">
+                {formatRupees(row.totalValue)}
+              </TableCell>
+              <TableCell className="text-right tabular-nums">
+                {formatRupees(row.totalPaid)}
+              </TableCell>
               <TableCell className="text-right tabular-nums text-navy">
                 {formatRupees(row.remaining)}
               </TableCell>
-              <TableCell className="text-ink-muted">{row.status || "—"}</TableCell>
+              <TableCell className="text-ink-muted">{row.status || "\u2014"}</TableCell>
             </tr>
           )}
         />
@@ -389,11 +464,28 @@ export default function VouchersScreen({
   );
 }
 
+const Kpi = memo(function Kpi({
+  label,
+  value,
+  accent,
+}: {
+  label: string;
+  value: string;
+  accent?: boolean;
+}) {
+  return (
+    <div className="rounded-lg bg-paper-raised p-4 ring-1 ring-line">
+      <p className="text-xs text-ink-subtle">{label}</p>
+      <p className={`money-figure mt-1 text-2xl ${accent ? "text-navy" : ""}`}>{value}</p>
+    </div>
+  );
+});
+
 const Meta = memo(function Meta({ label, value }: { label: string; value: string }) {
   return (
     <div>
       <dt className="text-xs uppercase tracking-wide text-ink-subtle">{label}</dt>
-      <dd className="mt-1 text-ink">{value || "—"}</dd>
+      <dd className="mt-1 text-ink">{value || "\u2014"}</dd>
     </div>
   );
 });
@@ -429,8 +521,17 @@ function EditForm({ draft, onChange }: { draft: VoucherSave; onChange: (next: Vo
   return (
     <div className="grid gap-4">
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Vendor" required value={draft.vendor} onChange={(vendor) => onChange({ ...draft, vendor })} />
-        <Field label="Project" value={draft.project ?? ""} onChange={(project) => onChange({ ...draft, project })} />
+        <Field
+          label="Vendor"
+          required
+          value={draft.vendor}
+          onChange={(vendor) => onChange({ ...draft, vendor })}
+        />
+        <Field
+          label="Project"
+          value={draft.project ?? ""}
+          onChange={(project) => onChange({ ...draft, project })}
+        />
         <Field
           label="Tax invoice"
           value={draft.taxInvoice ?? ""}
@@ -463,7 +564,9 @@ function EditForm({ draft, onChange }: { draft: VoucherSave; onChange: (next: Vo
                   <input
                     value={row.piNo}
                     onChange={(e) => {
-                      const payments = pays.map((p, idx) => (idx === i ? { ...p, piNo: e.target.value } : p));
+                      const payments = pays.map((p, idx) =>
+                        idx === i ? { ...p, piNo: e.target.value } : p,
+                      );
                       onChange({ ...draft, payments });
                     }}
                     className="h-10 w-24 rounded-md bg-paper-raised px-2 ring-1 ring-line"
@@ -511,7 +614,9 @@ function EditForm({ draft, onChange }: { draft: VoucherSave; onChange: (next: Vo
                   <input
                     value={row.remarks}
                     onChange={(e) => {
-                      const payments = pays.map((p, idx) => (idx === i ? { ...p, remarks: e.target.value } : p));
+                      const payments = pays.map((p, idx) =>
+                        idx === i ? { ...p, remarks: e.target.value } : p,
+                      );
                       onChange({ ...draft, payments });
                     }}
                     className="h-10 w-full min-w-32 rounded-md bg-paper-raised px-2 ring-1 ring-line"
