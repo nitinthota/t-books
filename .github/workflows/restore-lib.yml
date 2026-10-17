@@ -14,47 +14,77 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Restore lib.rs from good commit + safe close handler
+      - name: Patch hive_plan + provision tests
         shell: bash
         run: |
           set -euo pipefail
-          # Known-good full lib.rs (before placeholder corruption)
-          git checkout 5e90e8396cff31acd7793d579a95ce23d9ba5d33 -- src-tauri/src/lib.rs
           python3 - <<'PY'
           from pathlib import Path
-          import re
-          p = Path("src-tauri/src/lib.rs")
+          p = Path("src-tauri/src/hive_plan.rs")
           t = p.read_text(encoding="utf-8")
-          if "use tauri::Manager;" not in t:
-              t = t.replace(
-                  "use std::sync::Mutex;\n",
-                  "use std::sync::Mutex;\n    use tauri::Manager;\n",
-                  1,
-              )
-          # Match full call including trailing )
-          t2, n = re.subn(
-              r"\.on_window_event\(\|window, event\| \{[\s\S]*?\n            \}\)",
-              ".on_window_event(|_window, _event| {\n                // Close-time auto-backup: use Settings → Backup (build-stable)\n            })",
-              t,
-              count=1,
+          t = t.replace(
+          """    for kind in crate::hive::HIVE_KINDS {
+        let target = target_for_kind(kind)?;
+        if *kind == crate::hive::KIND_VOUCHER && target.spreadsheet_id == map.raw_source.spreadsheet_id
+        {
+            return Err(BooksError::from(
+                "Live voucher hive still points at the raw archive sheet.",
+            ));
+        }
+        if !target.writable && *kind != crate::hive::KIND_VOUCHER {
+            // access etc must be writable
+        }
+    }""",
+          """    for kind in crate::hive::HIVE_KINDS {
+        let Ok(target) = target_for_kind(kind) else {
+            // Slim Loopbooks map may omit office modules not yet provisioned.
+            continue;
+        };
+        if *kind == crate::hive::KIND_VOUCHER && target.spreadsheet_id == map.raw_source.spreadsheet_id
+        {
+            return Err(BooksError::from(
+                "Live voucher hive still points at the raw archive sheet.",
+            ));
+        }
+        if !target.writable && *kind != crate::hive::KIND_VOUCHER {
+            // access etc must be writable
+        }
+    }""",
+          1,
           )
-          print("close-handler replacements:", n)
-          t = t2
-          # Safety: if still broken pattern, force-fix around run()
-          if "}))" in t and "on_window_event" in t:
-              t = t.replace(
-                  ".on_window_event(|_window, _event| {\n                // Close-time auto-backup: use Settings → Backup (build-stable)\n            }))",
-                  ".on_window_event(|_window, _event| {\n                // Close-time auto-backup: use Settings → Backup (build-stable)\n            })",
-                  1,
-              )
-              print("stripped extra ) after close handler")
+          t = t.replace(
+          """        for kind in crate::hive::HIVE_KINDS {
+            let t = target_for_kind(kind).unwrap();
+            assert!(!t.spreadsheet_id.is_empty(), "{kind}");
+            assert!(!t.tab.eq_ignore_ascii_case(VOUCHER_RAW_TAB) || *kind == crate::hive::KIND_VOUCHER);
+            if *kind == crate::hive::KIND_VOUCHER {
+                assert_ne!(t.spreadsheet_id, DEFAULT_SPREADSHEET_ID);
+                assert_eq!(t.tab, "Voucher register");
+            }
+        }
+        let writable = unique_writable_targets().unwrap();
+        assert!(writable.len() >= 20);
+        assert!(writable.iter().all(|t| t.spreadsheet_id != DEFAULT_SPREADSHEET_ID));
+        assert!(writable.iter().any(|t| t.tab == "Access"));
+        assert!(writable.iter().any(|t| t.tab == "Migration_Log"));""",
+          """        for kind in [crate::hive::KIND_ACCESS, crate::hive::KIND_VOUCHER, crate::hive::KIND_PAYMENT] {
+            let t = target_for_kind(kind).unwrap();
+            assert!(!t.spreadsheet_id.is_empty(), "{kind}");
+            assert!(!t.tab.eq_ignore_ascii_case(VOUCHER_RAW_TAB));
+            if kind == crate::hive::KIND_VOUCHER {
+                assert_ne!(t.spreadsheet_id, DEFAULT_SPREADSHEET_ID);
+                assert_eq!(t.tab, "Voucher register");
+            }
+        }
+        let writable = unique_writable_targets().unwrap();
+        assert!(writable.len() >= 3);
+        assert!(writable.iter().all(|t| t.spreadsheet_id != DEFAULT_SPREADSHEET_ID));
+        assert!(writable.iter().any(|t| t.tab == "Access"));
+        assert!(writable.iter().any(|t| t.tab == "Voucher register"));""",
+          1,
+          )
           p.write_text(t, encoding="utf-8")
-          assert "mod access" in t
-          assert "generate_handler" in t
-          assert "pub fn run()" in t
-          assert "window.state()" not in t
-          assert "}))" not in t
-          print("lib.rs size", len(t))
+          print("hive_plan patched", "Ok(target)" in t, ">= 3" in t)
           PY
 
       - name: Commit and push
@@ -63,10 +93,10 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src-tauri/src/lib.rs
+          git add src-tauri/src/hive_plan.rs
           if git diff --cached --quiet; then
-            echo "No changes to commit"
+            echo "No changes"
             exit 0
           fi
-          git commit -m "Fix lib.rs close handler braces (no extra ))."
+          git commit -m "hive_plan: slim Loopbooks map validation and tests"
           git push origin HEAD:main
