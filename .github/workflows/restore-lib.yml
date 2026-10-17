@@ -18,6 +18,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Known-good full lib.rs (before placeholder corruption)
           git checkout 5e90e8396cff31acd7793d579a95ce23d9ba5d33 -- src-tauri/src/lib.rs
           python3 - <<'PY'
           from pathlib import Path
@@ -30,19 +31,29 @@ jobs:
                   "use std::sync::Mutex;\n    use tauri::Manager;\n",
                   1,
               )
+          # Match full call including trailing )
           t2, n = re.subn(
-              r"\.on_window_event\(\|window, event\| \{[\s\S]*?\n            \}",
+              r"\.on_window_event\(\|window, event\| \{[\s\S]*?\n            \}\)",
               ".on_window_event(|_window, _event| {\n                // Close-time auto-backup: use Settings → Backup (build-stable)\n            })",
               t,
               count=1,
           )
           print("close-handler replacements:", n)
           t = t2
+          # Safety: if still broken pattern, force-fix around run()
+          if "}))" in t and "on_window_event" in t:
+              t = t.replace(
+                  ".on_window_event(|_window, _event| {\n                // Close-time auto-backup: use Settings → Backup (build-stable)\n            }))",
+                  ".on_window_event(|_window, _event| {\n                // Close-time auto-backup: use Settings → Backup (build-stable)\n            })",
+                  1,
+              )
+              print("stripped extra ) after close handler")
           p.write_text(t, encoding="utf-8")
-          assert "mod access" in t, "missing mod access"
-          assert "generate_handler" in t, "missing generate_handler"
-          assert "pub fn run()" in t, "missing run()"
-          assert "window.state()" not in t, "window.state still present"
+          assert "mod access" in t
+          assert "generate_handler" in t
+          assert "pub fn run()" in t
+          assert "window.state()" not in t
+          assert "}))" not in t
           print("lib.rs size", len(t))
           PY
 
@@ -57,5 +68,5 @@ jobs:
             echo "No changes to commit"
             exit 0
           fi
-          git commit -m "Restore full lib.rs with build-stable close handler"
+          git commit -m "Fix lib.rs close handler braces (no extra ))."
           git push origin HEAD:main
