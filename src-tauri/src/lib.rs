@@ -1003,7 +1003,7 @@ mod desktop {
             })
             .on_window_event(|_window, _event| {
                 // Close-time auto-backup: use Settings → Backup (build-stable)
-            }))
+            })
             .invoke_handler(tauri::generate_handler![
                 inspect,
                 login,
