@@ -25,8 +25,8 @@
     "format": "prettier --write .",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "npx tauri build --ci && node scripts/rename-installer.mjs",
-    "build:tauri": "npx vite build --config vite.tauri.config.ts"
+    "tauri:build": "npm run build:tauri && npx tauri build --ci && node scripts/rename-installer.mjs",
+    "build:tauri": "npx vite build --config vite.tauri.config.ts && node scripts/assert-tauri-ui.mjs"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.4",
