@@ -206,16 +206,14 @@ export const BoardHome = memo(function BoardHome({
         {ask && hits && hits.length > 0 ? (
           <ul className="mt-3 max-h-40 overflow-auto rounded-lg bg-paper-raised ring-1 ring-line text-sm">
             {hits.slice(0, 12).map((hit, i) => (
-              <li key={`${hit.kind}-${hit.key}-${i}`}>
+              <li key={`${hit.nav}-${hit.key}-${i}`}>
                 <button
                   type="button"
-                  className="pressable flex w-full justify-between px-3 py-2 text-left"
-                  onClick={() => onOpen(navForDirty(hit.kind), hit.key)}
+                  className="pressable flex w-full justify-between gap-3 px-3 py-2 text-left"
+                  onClick={() => onOpen(hit.nav, hit.key)}
                 >
-                  <span>
-                    {hit.kind} {hit.key}
-                  </span>
-                  <span className="text-ink-muted">{hit.label || ""}</span>
+                  <span className="min-w-0 truncate">{hit.title}</span>
+                  <span className="shrink-0 text-ink-muted">{hit.subtitle || ""}</span>
                 </button>
               </li>
             ))}
